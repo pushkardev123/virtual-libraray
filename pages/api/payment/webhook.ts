@@ -151,6 +151,16 @@ async function handlePaymentFailed(paymentEntity: any) {
     payment.razorpayPaymentId = paymentEntity.id;
     payment.failureReason = paymentEntity.error_description || 'Payment failed';
     await payment.save();
+
+    // Create or update user even for failed payment (but not premium)
+    await createOrUpdateUserFromPayment({
+      email: payment.email,
+      name: payment.name,
+      phone: payment.phone,
+      examType: payment.examType,
+      isPaymentSuccessful: false,
+      paymentId: payment._id, // Link payment to user
+    });
   }
 }
 

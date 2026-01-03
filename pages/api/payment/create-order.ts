@@ -4,6 +4,7 @@ import connectDB from '@/lib/mongodb';
 import Payment, { PaymentStatus } from '@/models/Payment';
 import Coupon from '@/models/Coupon';
 import { apiResponse, apiError } from '@/utils/response';
+import { createOrUpdateUserFromPayment } from '@/services/user-payment.service';
 
 /**
  * API Handler: Create Razorpay Order
@@ -121,6 +122,17 @@ export default async function handler(
       },
     });
     await payment.save();
+
+    // Create user immediately when order is created (as normal user, not premium yet)
+    // User will be upgraded to premium when payment is successful
+    await createOrUpdateUserFromPayment({
+      email,
+      name,
+      phone,
+      examType,
+      isPaymentSuccessful: false, // Not premium yet, payment not completed
+      paymentId: payment._id, // Link payment to user
+    });
 
     // Return order details to frontend
     return apiResponse(res, 'Order created successfully', {
