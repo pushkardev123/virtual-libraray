@@ -120,34 +120,76 @@ export default function PaymentSuccess() {
                 <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">
                   Payment Successful! 🎉
                 </h1>
-                <p className="text-base text-gray-600">
-                  Welcome to Virtual Library, {userDetails?.name || 'there'}!
+                <p className="text-base md:text-lg text-gray-700 font-medium">
+                  Payment of ₹{paymentDetails ? (paymentDetails.amount / 100).toFixed(2) : '0.00'} completed successfully.
+                </p>
+                <p className="text-sm text-gray-600 mt-1">
+                  You'll receive confirmation shortly.
                 </p>
               </div>
 
               {/* Content Section - Scrollable */}
               <div className="p-8 space-y-6 overflow-y-auto flex-1">
+                {/* Payment Details */}
+                {paymentDetails && (
+                  <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-5 border border-green-200">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center">
+                          <svg
+                            className="w-5 h-5 text-white"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                            />
+                          </svg>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-600 uppercase tracking-wide">Plan Selected</p>
+                          <p className="text-base font-semibold text-gray-900 mt-0.5">
+                            {paymentDetails.examType === 'neet-pg' ? 'NEET-PG' : 
+                             paymentDetails.examType === 'other-exams' ? 'Other Exams' : 
+                             paymentDetails.examType}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-gray-600 uppercase tracking-wide">Amount</p>
+                        <p className="text-2xl font-bold text-green-700 mt-0.5">
+                          ₹{(paymentDetails.amount / 100).toFixed(2)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Confirmation Details */}
                 {userDetails && (
                   <div className="bg-gray-50 rounded-lg p-6">
-                    <div className="flex items-center mb-3">
-                      <svg
-                        className="w-5 h-5 mr-2 text-green-600"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                        />
-                      </svg>
-                      <h2 className="font-semibold text-gray-900 text-lg">Confirmation Sent To:</h2>
+                    <div className="mb-4">
+                      <h2 className="font-semibold text-gray-900 text-lg mb-1">
+                        Welcome to Virtual Library, {userDetails.name}! 👋
+                      </h2>
+                      <p className="text-sm text-gray-600">
+                        Your confirmation has been sent to:
+                      </p>
                     </div>
-                    <p className="text-sm text-gray-600 mb-2">📧 {userDetails.email}</p>
-                    <p className="text-sm text-gray-600">📱 +91 {userDetails.phone}</p>
+                    <div className="space-y-2">
+                      <p className="text-sm text-gray-700 flex items-center gap-2">
+                        <span className="text-base">📧</span>
+                        <span className="font-medium">{userDetails.email}</span>
+                      </p>
+                      <p className="text-sm text-gray-700 flex items-center gap-2">
+                        <span className="text-base">📱</span>
+                        <span className="font-medium">+91 {userDetails.phone}</span>
+                      </p>
+                    </div>
                   </div>
                 )}
 

@@ -213,11 +213,16 @@ export default function PaymentForm({ examType }: PaymentFormProps = {}) {
       razorpay.on('payment.failed', function (response: any) {
         console.error('Payment failed:', response.error)
         
-        // Redirect to failure page
+        // Redirect to failure page with payment details
         const errorMsg = response.error.description || 'Payment failed. Please try again.'
+        const amount = appliedCoupon ? appliedCoupon.discountedAmount : PRICING.MEMBERSHIP_FEE
         router.push({
           pathname: '/payment-failed',
-          query: { error: errorMsg }
+          query: { 
+            error: errorMsg,
+            amount: amount.toString(),
+            examType: examType || 'general'
+          }
         })
         setLoading(false)
       })
@@ -226,11 +231,16 @@ export default function PaymentForm({ examType }: PaymentFormProps = {}) {
     } catch (error: any) {
       console.error('Error initiating payment:', error)
       
-      // Redirect to failure page
+      // Redirect to failure page with payment details
       const errorMsg = error.message || 'Failed to initiate payment. Please try again.'
+      const amount = appliedCoupon ? appliedCoupon.discountedAmount : PRICING.MEMBERSHIP_FEE
       router.push({
         pathname: '/payment-failed',
-        query: { error: errorMsg }
+        query: { 
+          error: errorMsg,
+          amount: amount.toString(),
+          examType: examType || 'general'
+        }
       })
       setLoading(false)
     }
@@ -269,11 +279,16 @@ export default function PaymentForm({ examType }: PaymentFormProps = {}) {
     } catch (error: any) {
       console.error('Error verifying payment:', error)
       
-      // Redirect to failure page
+      // Redirect to failure page with payment details
       const errorMsg = error.message || 'Payment verification failed. Please contact support with your payment details.'
+      const amount = appliedCoupon ? appliedCoupon.discountedAmount : PRICING.MEMBERSHIP_FEE
       router.push({
         pathname: '/payment-failed',
-        query: { error: errorMsg }
+        query: { 
+          error: errorMsg,
+          amount: amount.toString(),
+          examType: examType || 'general'
+        }
       })
     } finally {
       setLoading(false)

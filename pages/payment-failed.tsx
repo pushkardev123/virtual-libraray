@@ -6,10 +6,14 @@ import Header from '@/components/Header'
 export default function PaymentFailed() {
   const router = useRouter()
   const [errorMessage, setErrorMessage] = useState<string>('')
+  const [paymentDetails, setPaymentDetails] = useState<{
+    amount: number
+    examType: string
+  } | null>(null)
 
   useEffect(() => {
-    // Get error message from query params
-    const { error } = router.query
+    // Get error message and payment details from query params
+    const { error, amount, examType } = router.query
     
     // If no error message provided, redirect to home
     if (router.isReady && !error) {
@@ -19,6 +23,14 @@ export default function PaymentFailed() {
     
     if (error) {
       setErrorMessage(error as string)
+    }
+
+    // Set payment details if available
+    if (amount && examType) {
+      setPaymentDetails({
+        amount: parseFloat(amount as string),
+        examType: examType as string
+      })
     }
   }, [router, router.isReady, router.query])
 
@@ -67,6 +79,51 @@ export default function PaymentFailed() {
 
               {/* Content Section - Scrollable */}
               <div className="p-8 space-y-6 overflow-y-auto flex-1">
+                {/* Payment Details */}
+                {paymentDetails && (
+                  <div className="bg-gradient-to-br from-orange-50 to-red-50 rounded-lg p-6 border-2 border-red-200">
+                    <div className="flex items-center justify-between mb-3">
+                      <h2 className="font-semibold text-gray-900 text-lg flex items-center">
+                        <svg
+                          className="w-5 h-5 mr-2 text-red-600"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                          />
+                        </svg>
+                        Attempted Payment Details
+                      </h2>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-600">Amount Attempted:</span>
+                        <span className="text-xl font-bold text-gray-900">
+                          ₹{paymentDetails.amount.toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-600">Exam Type:</span>
+                        <span className="text-sm font-semibold text-gray-900">
+                          {paymentDetails.examType === 'neet-pg' ? 'NEET-PG' : 
+                           paymentDetails.examType === 'other-exams' ? 'Other Exams' : 
+                           paymentDetails.examType}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="mt-3 pt-3 border-t border-red-200">
+                      <p className="text-xs text-gray-600">
+                        ⚠️ No money has been deducted from your account
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 {/* Common Reasons */}
                 <div className="bg-red-50 rounded-lg p-6">
                   <h2 className="font-semibold text-gray-900 mb-4 text-lg">
