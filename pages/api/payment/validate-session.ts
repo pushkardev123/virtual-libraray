@@ -39,7 +39,7 @@ export default async function handler(
       return apiError(res, 'Invalid or expired session', 401);
     }
 
-    // Return user details based on payment status
+    // Return user details and payment info based on payment status
     return apiResponse(res, 'Session validated', {
       valid: true,
       status: payment.status,
@@ -47,6 +47,11 @@ export default async function handler(
         name: payment.name,
         email: payment.email,
         phone: payment.phone,
+      },
+      paymentDetails: {
+        amount: payment?.amount || 0,
+        currency: payment?.currency || 'INR',
+        examType: payment?.examType || 'NEET-PG',
       },
     });
   } catch (error: any) {

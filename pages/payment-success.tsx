@@ -11,6 +11,11 @@ export default function PaymentSuccess() {
     email: string
     phone: string
   } | null>(null)
+  const [paymentDetails, setPaymentDetails] = useState<{
+    amount: number
+    currency: string
+    examType: string
+  } | null>(null)
 
   useEffect(() => {
     const validateSession = async () => {
@@ -40,8 +45,20 @@ export default function PaymentSuccess() {
           return
         }
 
-        // Valid session, set user details
+        // Valid session, set user details and payment details
         setUserDetails(data.data.userDetails)
+        setPaymentDetails(data.data.paymentDetails)
+        
+        // Track Purchase event for Meta Pixel
+      if (typeof window !== 'undefined' && window.fbq && data.data.paymentDetails) {
+          window.fbq('track', 'Purchase', {
+            content_name: 'Virtual Library Membership',
+            content_category: data.data.paymentDetails?.examType || 'NEET-PG',
+            value: data.data.paymentDetails?.amount / 100 || 0, // Convert paise to rupees
+            currency: data.data.paymentDetails?.currency || 'INR',
+          });
+        }
+        
         setLoading(false)
       } catch (error) {
         console.error('Error validating session:', error)

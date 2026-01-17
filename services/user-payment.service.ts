@@ -1,10 +1,13 @@
 /**
  * User Payment Service
  * Handles user creation/update when payments are made
+ * 
+ * NOTE: This service is currently disabled as the User model has not been implemented yet.
+ * Uncomment and update once User model is created.
  */
 
-import { User } from '@/models';
-import { UserStatus, RegistrationSource } from '@/types';
+// import { User } from '@/models';
+// import { UserStatus, RegistrationSource } from '@/types';
 import mongoose from 'mongoose';
 
 interface PaymentUserData {
@@ -21,10 +24,19 @@ interface PaymentUserData {
  * - If user doesn't exist: create new user
  * - If user exists: update premium status only
  * - Email is unique constraint
+ * 
+ * NOTE: Currently disabled - User model not implemented
  */
 export async function createOrUpdateUserFromPayment(
   paymentData: PaymentUserData
 ): Promise<void> {
+  // TODO: Implement once User model is created
+  // For now, just log that a payment was made
+  console.log(`💳 Payment processed for: ${paymentData.email} | Success: ${paymentData.isPaymentSuccessful}`);
+  return;
+
+  /* UNCOMMENT WHEN USER MODEL IS READY:
+  
   try {
     const { email, name, phone, examType, isPaymentSuccessful, paymentId } = paymentData;
 
@@ -133,5 +145,7 @@ export async function createOrUpdateUserFromPayment(
     // Don't throw - we don't want payment verification to fail if user creation fails
     // The payment should still be processed successfully
   }
+  
+  */
 }
 

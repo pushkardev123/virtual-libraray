@@ -147,6 +147,16 @@ export default function PaymentForm({ examType }: PaymentFormProps = {}) {
     setLoading(true)
 
     try {
+      // Track InitiateCheckout event for Meta Pixel
+      if (typeof window !== 'undefined' && window.fbq) {
+        window.fbq('track', 'InitiateCheckout', {
+          content_name: 'Virtual Library Membership',
+          content_category: examType || 'general',
+          value: appliedCoupon ? appliedCoupon.discountedAmount : PRICING.MEMBERSHIP_FEE,
+          currency: PRICING.CURRENCY,
+        });
+      }
+
       // Create order on backend
       const response = await fetch('/api/payment/create-order', {
         method: 'POST',
