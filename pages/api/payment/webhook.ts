@@ -3,7 +3,6 @@ import crypto from 'crypto';
 import connectDB from '@/lib/mongodb';
 import Payment, { PaymentStatus } from '@/models/Payment';
 import { apiResponse, apiError } from '@/utils/response';
-import { sendPaymentConfirmationWhatsApp } from '@/services/whatsapp.service';
 
 /**
  * API Handler: Razorpay Webhook
@@ -112,18 +111,9 @@ async function handlePaymentCaptured(paymentEntity: any) {
     payment.paidAt = new Date(paymentEntity.created_at * 1000);
     await payment.save();
 
-    // Send WhatsApp confirmation (non-blocking)
-    sendPaymentConfirmationWhatsApp({
-      name: payment.name,
-      email: payment.email,
-      phone: payment.phone,
-      amount: payment.amount,
-      orderId: payment.razorpayOrderId,
-      paymentId: paymentEntity.id,
-      isPremium: true,
-    }).catch((error) => {
-      console.error('WhatsApp notification failed (non-critical):', error);
-    });
+    // Note: WhatsApp notification is sent from verify.ts to avoid duplicates
+    // Webhook is for backup/reconciliation only
+    console.log('✅ Payment captured via webhook:', paymentEntity.id);
   }
 }
 
@@ -140,7 +130,6 @@ async function handlePaymentFailed(paymentEntity: any) {
     payment.razorpayPaymentId = paymentEntity.id;
     payment.failureReason = paymentEntity.error_description || 'Payment failed';
     await payment.save();
-
   }
 }
 
@@ -157,18 +146,9 @@ async function handleOrderPaid(orderEntity: any) {
     payment.paidAt = new Date();
     await payment.save();
 
-    // Send WhatsApp confirmation (non-blocking)
-    sendPaymentConfirmationWhatsApp({
-      name: payment.name,
-      email: payment.email,
-      phone: payment.phone,
-      amount: payment.amount,
-      orderId: payment.razorpayOrderId,
-      paymentId: payment.razorpayPaymentId || orderEntity.receipt,
-      isPremium: true,
-    }).catch((error) => {
-      console.error('WhatsApp notification failed (non-critical):', error);
-    });
+    // Note: WhatsApp notification is sent from verify.ts to avoid duplicates
+    // Webhook is for backup/reconciliation only
+    console.log('✅ Order paid via webhook:', orderEntity.id);
   }
 }
 
