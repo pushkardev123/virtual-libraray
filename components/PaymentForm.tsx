@@ -38,6 +38,38 @@ export default function PaymentForm({ examType }: PaymentFormProps = {}) {
   const [couponError, setCouponError] = useState('')
   const [applyingCoupon, setApplyingCoupon] = useState(false)
 
+  // Check if Razorpay script is already loaded (for cached scenarios)
+  useEffect(() => {
+    const checkRazorpayLoaded = () => {
+      if (typeof window !== 'undefined' && window.Razorpay) {
+        setRazorpayLoaded(true)
+        return true
+      }
+      return false
+    }
+
+    // Check immediately when component mounts
+    if (checkRazorpayLoaded()) {
+      return
+    }
+
+    // If not loaded, check periodically for up to 10 seconds
+    let attempts = 0
+    const maxAttempts = 20 // 10 seconds (20 * 500ms)
+    
+    const intervalId = setInterval(() => {
+      attempts++
+      if (checkRazorpayLoaded() || attempts >= maxAttempts) {
+        clearInterval(intervalId)
+        if (attempts >= maxAttempts && !razorpayLoaded) {
+          console.error('Razorpay script failed to load within timeout')
+        }
+      }
+    }, 500)
+
+    return () => clearInterval(intervalId)
+  }, [])
+
   // Handle input changes
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }))
@@ -300,8 +332,20 @@ export default function PaymentForm({ examType }: PaymentFormProps = {}) {
       {/* Load Razorpay script */}
       <Script
         src="https://checkout.razorpay.com/v1/checkout.js"
-        onLoad={() => setRazorpayLoaded(true)}
-        onError={() => console.error('Failed to load Razorpay script')}
+        strategy="lazyOnload"
+        onLoad={() => {
+          console.log('Razorpay script loaded successfully')
+          setRazorpayLoaded(true)
+        }}
+        onError={(e) => {
+          console.error('Failed to load Razorpay script:', e)
+        }}
+        onReady={() => {
+          // Additional check when script is ready
+          if (typeof window !== 'undefined' && window.Razorpay) {
+            setRazorpayLoaded(true)
+          }
+        }}
       />
       
       <section id="paymentForm" className="px-4 py-0">
