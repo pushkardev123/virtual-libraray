@@ -4,6 +4,7 @@ import connectDB from '@/lib/mongodb';
 import Payment, { PaymentStatus } from '@/models/Payment';
 import Coupon from '@/models/Coupon';
 import { apiResponse, apiError } from '@/utils/response';
+import { sendMetaInitiateCheckoutEvent } from '@/services/meta-conversions.service';
 
 /**
  * API Handler: Create Razorpay Order
@@ -121,6 +122,24 @@ export default async function handler(
       },
     });
     await payment.save();
+
+    // Send Meta InitiateCheckout event (non-blocking)
+    const nameParts = name.split(' ');
+    sendMetaInitiateCheckoutEvent({
+      email: email,
+      phone: phone,
+      firstName: nameParts[0] || name,
+      lastName: nameParts.slice(1).join(' ') || undefined,
+      amount: finalAmount, // Amount in rupees
+      currency: 'INR',
+      orderId: razorpayOrder.id,
+      userAgent: req.headers['user-agent'],
+      ipAddress: (req.headers['x-forwarded-for'] as string)?.split(',')[0] || 
+                 (req.headers['x-real-ip'] as string) || 
+                 req.socket.remoteAddress,
+    }).catch((error) => {
+      console.error('Meta InitiateCheckout event failed (non-critical):', error);
+    });
 
     // Return order details to frontend
     return apiResponse(res, 'Order created successfully', {

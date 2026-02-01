@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import connectDB from '@/lib/mongodb';
 import Payment, { PaymentStatus } from '@/models/Payment';
 import { apiResponse, apiError } from '@/utils/response';
+import { sendMetaPurchaseEvent } from '@/services/meta-conversions.service';
 
 /**
  * API Handler: Razorpay Webhook
@@ -106,10 +107,29 @@ async function handlePaymentCaptured(paymentEntity: any) {
   });
 
   if (payment) {
+    const wasAlreadyCaptured = payment.status === PaymentStatus.SUCCESS;
+    
     payment.status = PaymentStatus.SUCCESS;
     payment.razorpayPaymentId = paymentEntity.id;
     payment.paidAt = new Date(paymentEntity.created_at * 1000);
     await payment.save();
+
+    // Send Meta conversion event only if this is a new capture (to avoid duplicates)
+    if (!wasAlreadyCaptured) {
+      const nameParts = payment.name.split(' ');
+      sendMetaPurchaseEvent({
+        email: payment.email,
+        phone: payment.phone,
+        firstName: nameParts[0] || payment.name,
+        lastName: nameParts.slice(1).join(' ') || undefined,
+        amount: payment.amount / 100, // Convert paise to rupees
+        currency: 'INR',
+        orderId: payment.razorpayOrderId,
+        paymentId: paymentEntity.id,
+      }).catch((error) => {
+        console.error('Meta Conversions API failed (non-critical):', error);
+      });
+    }
 
     // Note: WhatsApp notification is sent from verify.ts to avoid duplicates
     // Webhook is for backup/reconciliation only

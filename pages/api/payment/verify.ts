@@ -4,6 +4,7 @@ import connectDB from '@/lib/mongodb';
 import Payment, { PaymentStatus } from '@/models/Payment';
 import { apiResponse, apiError } from '@/utils/response';
 import { sendPaymentConfirmationWhatsApp } from '@/services/whatsapp.service';
+import { sendMetaPurchaseEvent } from '@/services/meta-conversions.service';
 
 /**
  * API Handler: Verify Razorpay Payment
@@ -76,6 +77,25 @@ export default async function handler(
         isPremium: true,
       }).catch((error) => {
         console.error('WhatsApp notification failed (non-critical):', error);
+      });
+
+      // Send Meta Conversions API Purchase event (non-blocking)
+      const nameParts = payment.name.split(' ');
+      sendMetaPurchaseEvent({
+        email: payment.email,
+        phone: payment.phone,
+        firstName: nameParts[0] || payment.name,
+        lastName: nameParts.slice(1).join(' ') || undefined,
+        amount: payment.amount / 100, // Convert paise to rupees
+        currency: 'INR',
+        orderId: payment.razorpayOrderId,
+        paymentId: razorpay_payment_id,
+        userAgent: req.headers['user-agent'],
+        ipAddress: (req.headers['x-forwarded-for'] as string)?.split(',')[0] || 
+                   (req.headers['x-real-ip'] as string) || 
+                   req.socket.remoteAddress,
+      }).catch((error) => {
+        console.error('Meta Conversions API failed (non-critical):', error);
       });
 
       return apiResponse(res, 'Payment verified successfully', {
