@@ -260,3 +260,141 @@ export const generateRankingsPDF = ({
   doc.save(fileName);
 };
 
+// ─── Forest Rankings PDF ──────────────────────────────────────────────────────
+
+interface ForestRankingData {
+  rank: number;
+  name: string;
+  totalDurationFormatted: string;
+}
+
+interface ForestPDFOptions {
+  date: string;
+  rankings: ForestRankingData[];
+  totalParticipants: number;
+}
+
+export const generateForestRankingsPDF = ({ date, rankings, totalParticipants }: ForestPDFOptions) => {
+  const doc = new jsPDF('p', 'mm', 'a4');
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  // Green theme colors
+  const primaryGreen = [21, 128, 61];   // green-700  #15803d
+  const lightGreen   = [134, 239, 172]; // green-300
+
+  // ===== HEADER =====
+  doc.setFillColor(primaryGreen[0], primaryGreen[1], primaryGreen[2]);
+  doc.rect(0, 0, pageWidth, 55, 'F');
+
+  doc.setFillColor(lightGreen[0], lightGreen[1], lightGreen[2]);
+  doc.rect(0, 53, pageWidth, 2, 'F');
+
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(36);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Virtual Library', pageWidth / 2, 22, { align: 'center' });
+
+  doc.setFontSize(15);
+  doc.setFont('helvetica', 'normal');
+  doc.text('Forest Rankings Report', pageWidth / 2, 34, { align: 'center' });
+
+  doc.setFontSize(13);
+  doc.setFont('helvetica', 'bold');
+  doc.text(date, pageWidth / 2, 45, { align: 'center' });
+
+  let currentY = 72;
+
+  // ===== SECTION TITLE =====
+  doc.setTextColor(17, 24, 39);
+  doc.setFontSize(20);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Forest Rankings', 20, currentY);
+
+  currentY += 12;
+
+  // ===== TABLE =====
+  const tableData = rankings.map(r => [
+    r.rank.toString(),
+    formatNameToTitleCase(r.name),
+    r.totalDurationFormatted,
+  ]);
+
+  autoTable(doc, {
+    startY: currentY,
+    head: [['Rank', 'Name', 'Hours']],
+    body: tableData,
+    theme: 'plain',
+    headStyles: {
+      fillColor: [240, 253, 244], // green-50
+      textColor: [22, 78, 37],   // green-900
+      fontStyle: 'bold',
+      fontSize: 11,
+      cellPadding: 7,
+      lineWidth: 0,
+      lineColor: [187, 247, 208],
+    },
+    bodyStyles: {
+      fontSize: 11,
+      cellPadding: 7,
+      textColor: [31, 41, 55],
+      fontStyle: 'normal',
+      lineWidth: 0.1,
+      lineColor: [220, 252, 231],
+    },
+    alternateRowStyles: {
+      fillColor: [249, 250, 251],
+    },
+    columnStyles: {
+      0: { cellWidth: 28, halign: 'center', fontStyle: 'bold', fontSize: 11 },
+      1: { cellWidth: 100, fontStyle: 'normal', fontSize: 11 },
+      2: { cellWidth: 42, halign: 'center', fontStyle: 'bold', fontSize: 11, textColor: [21, 128, 61] },
+    },
+    margin: { left: 20, right: 20 },
+    tableLineWidth: 0.1,
+    tableLineColor: [187, 247, 208],
+    didParseCell: function (data) {
+      if (data.section === 'body' && data.row.index < 3) {
+        if (data.row.index === 0) {
+          data.cell.styles.fillColor = [254, 243, 199]; // gold
+          if (data.column.index === 0) { data.cell.styles.textColor = [161, 98, 7]; data.cell.styles.fontStyle = 'bold'; data.cell.styles.fontSize = 13; }
+          if (data.column.index === 1) { data.cell.styles.fontStyle = 'bold'; data.cell.styles.fontSize = 12; }
+        } else if (data.row.index === 1) {
+          data.cell.styles.fillColor = [229, 231, 235]; // silver
+          if (data.column.index === 0) { data.cell.styles.textColor = [75, 85, 99]; data.cell.styles.fontStyle = 'bold'; data.cell.styles.fontSize = 13; }
+          if (data.column.index === 1) { data.cell.styles.fontStyle = 'bold'; data.cell.styles.fontSize = 12; }
+        } else if (data.row.index === 2) {
+          data.cell.styles.fillColor = [254, 215, 170]; // bronze
+          if (data.column.index === 0) { data.cell.styles.textColor = [154, 52, 18]; data.cell.styles.fontStyle = 'bold'; data.cell.styles.fontSize = 13; }
+          if (data.column.index === 1) { data.cell.styles.fontStyle = 'bold'; data.cell.styles.fontSize = 12; }
+        }
+      }
+      if (data.section === 'body' && data.column.index === 0) {
+        data.cell.styles.fontStyle = 'bold';
+      }
+    },
+    didDrawPage: function () {
+      const footerY = pageHeight - 15;
+      doc.setDrawColor(75, 85, 99);
+      doc.setLineWidth(0.3);
+      doc.line(20, footerY - 6, pageWidth - 20, footerY - 6);
+
+      doc.setFontSize(9);
+      doc.setTextColor(75, 85, 99);
+      doc.setFont('helvetica', 'normal');
+
+      const currentPage = (doc as any).internal.getCurrentPageInfo().pageNumber;
+      const totalPages  = (doc as any).internal.getNumberOfPages();
+      doc.text(`Page ${currentPage} of ${totalPages}`, 20, footerY, { align: 'left' });
+
+      doc.setFont('helvetica', 'bold');
+      doc.text('Virtual Library — Forest Rankings', pageWidth / 2, footerY, { align: 'center' });
+
+      doc.setFont('helvetica', 'normal');
+      doc.text(date, pageWidth - 20, footerY, { align: 'right' });
+    },
+  });
+
+  doc.save(`VirtualLibrary_ForestRankings_${date}.pdf`);
+};
+
