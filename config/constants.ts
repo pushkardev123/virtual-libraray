@@ -36,7 +36,6 @@ export const RANKING = {
   EXCLUDED_NAMES: ['Virtual Library Admin'],
   MAX_TOP_RANKS: 10000, // Allow up to 10,000 users in rankings
   DEFAULT_LIMIT: 10000, // Default API limit for fetching rankings
-  MAX_DISPLAYABLE_DURATION: 930, // 15.5 hours in minutes - hide longer sessions from public view
 } as const;
 
 // Pricing Configuration

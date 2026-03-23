@@ -1,6 +1,5 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { RANKING } from '@/config/constants';
 
 /**
  * Format name to Title Case (capitalize first letter of each word)
@@ -38,7 +37,7 @@ interface PDFOptions {
   date: string;
   rankings: RankingData[];
   statistics: Statistics;
-  includeAllDurations?: boolean; // If true, include all durations (admin view). Default false - filters out > 15.5 hours
+  includeAllDurations?: boolean;
 }
 
 export const generateRankingsPDF = ({ 
@@ -47,17 +46,11 @@ export const generateRankingsPDF = ({
   statistics,
   includeAllDurations = false 
 }: PDFOptions) => {
-  // Filter rankings for public view unless includeAllDurations is true
-  let filteredRankings = rankings;
-  if (!includeAllDurations) {
-    filteredRankings = rankings
-      .filter(r => !r.totalDuration || r.totalDuration <= RANKING.MAX_DISPLAYABLE_DURATION)
-      .map((r, index) => {
-        // Handle Mongoose documents by converting to plain object
+  let filteredRankings = rankings.map((r, index) => {
         const plainRanking = (r as any).toObject ? (r as any).toObject() : r;
         
         return {
-          rank: index + 1, // Recalculate ranks starting from 1
+          rank: index + 1,
           fullName: formatNameToTitleCase(plainRanking.fullName),
           email: plainRanking.email,
           totalDuration: plainRanking.totalDuration,
@@ -65,16 +58,6 @@ export const generateRankingsPDF = ({
           sessionCount: plainRanking.sessionCount,
         };
       });
-  } else {
-    // Apply title case formatting even when including all durations
-    filteredRankings = rankings.map(r => {
-      const plainRanking = (r as any).toObject ? (r as any).toObject() : r;
-      return {
-        ...plainRanking,
-        fullName: formatNameToTitleCase(plainRanking.fullName),
-      };
-    });
-  }
   // Create PDF in A4 format
   const doc = new jsPDF('p', 'mm', 'a4');
   const pageWidth = doc.internal.pageSize.getWidth();

@@ -246,19 +246,10 @@ export class RankingService {
   }
 
   /**
-   * Filter out excessive study durations for public view
-   * Removes entries with study time > max displayable duration
-   * and recalculates ranks starting from 1
+   * Format rankings for public view - recalculates ranks and formats names
    */
   static filterForPublicView(rankings: IRankingEntry[]): IRankingEntry[] {
-    const filtered = this.filterRankings(rankings, {
-      maxDuration: RANKING.MAX_DISPLAYABLE_DURATION,
-    });
-    
-    // Recalculate ranks starting from 1
-    // Convert to plain objects to avoid Mongoose document issues
-    const result = filtered.map((entry, index) => {
-      // Handle Mongoose documents by accessing the plain object
+    return rankings.map((entry, index) => {
       const plainEntry = (entry as any).toObject ? (entry as any).toObject() : entry;
       
       return {
@@ -272,8 +263,6 @@ export class RankingService {
         sessionCount: plainEntry.sessionCount,
       };
     });
-    
-    return result;
   }
 
   /**
