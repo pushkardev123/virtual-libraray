@@ -1,5 +1,6 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { RANKING } from '@/config/constants';
 
 /**
  * Format name to Title Case (capitalize first letter of each word)
@@ -37,7 +38,7 @@ interface PDFOptions {
   date: string;
   rankings: RankingData[];
   statistics: Statistics;
-  includeAllDurations?: boolean;
+  includeAllDurations?: boolean; // If true, include all durations (admin view). Default false - filters out > 17 hours
 }
 
 export const generateRankingsPDF = ({ 
@@ -46,9 +47,12 @@ export const generateRankingsPDF = ({
   statistics,
   includeAllDurations = false 
 }: PDFOptions) => {
-  let filteredRankings = rankings.map((r, index) => {
+  let filteredRankings: RankingData[];
+  if (!includeAllDurations) {
+    filteredRankings = rankings
+      .filter(r => !r.totalDuration || r.totalDuration <= RANKING.MAX_DISPLAYABLE_DURATION)
+      .map((r, index) => {
         const plainRanking = (r as any).toObject ? (r as any).toObject() : r;
-        
         return {
           rank: index + 1,
           fullName: formatNameToTitleCase(plainRanking.fullName),
@@ -58,6 +62,15 @@ export const generateRankingsPDF = ({
           sessionCount: plainRanking.sessionCount,
         };
       });
+  } else {
+    filteredRankings = rankings.map(r => {
+      const plainRanking = (r as any).toObject ? (r as any).toObject() : r;
+      return {
+        ...plainRanking,
+        fullName: formatNameToTitleCase(plainRanking.fullName),
+      };
+    });
+  }
   // Create PDF in A4 format
   const doc = new jsPDF('p', 'mm', 'a4');
   const pageWidth = doc.internal.pageSize.getWidth();

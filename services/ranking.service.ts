@@ -246,10 +246,15 @@ export class RankingService {
   }
 
   /**
-   * Format rankings for public view - recalculates ranks and formats names
+   * Filter out excessive study durations for public view
+   * Removes entries with study time > 17 hours and recalculates ranks starting from 1
    */
   static filterForPublicView(rankings: IRankingEntry[]): IRankingEntry[] {
-    return rankings.map((entry, index) => {
+    const filtered = this.filterRankings(rankings, {
+      maxDuration: RANKING.MAX_DISPLAYABLE_DURATION,
+    });
+    
+    return filtered.map((entry, index) => {
       const plainEntry = (entry as any).toObject ? (entry as any).toObject() : entry;
       
       return {
