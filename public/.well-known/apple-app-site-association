@@ -1,0 +1,14 @@
+{
+    "applinks": {
+        "apps": [],
+        "details": [
+            {
+                "appID": "W9U26ZL2MQ.com.deepakanjna.virtuallibrary",
+                "paths": [
+                    "/focus/*",
+                    "/focus/join/*"
+                ]
+            }
+        ]
+    }
+}

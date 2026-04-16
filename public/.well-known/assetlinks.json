@@ -1,0 +1,15 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.pushkardev123.VirtualLibrary",
+      "sha256_cert_fingerprints": [
+        "AB:58:F6:26:29:02:67:E7:5D:B3:37:C1:F1:E2:6D:D0:56:F2:CF:51:EB:20:AE:6B:72:EB:2C:57:FB:EF:89:6B",
+        "C2:5A:F0:ED:78:1C:48:80:B5:7E:48:00:7F:28:9F:44:34:46:7F:04:CB:EE:0D:47:D8:30:32:7C:EF:F3:C3:7A"
+      ]
+    }
+  }
+]
