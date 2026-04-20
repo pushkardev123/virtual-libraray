@@ -16,11 +16,7 @@ declare global {
 }
 
 // Global variable to cache connection across hot reloads in development
-let cached = global.mongoose;
-
-if (!cached) {
-  cached = global.mongoose = { conn: null, promise: null };
-}
+const cached = global.mongoose ?? (global.mongoose = { conn: null, promise: null });
 
 /**
  * Database connection with singleton pattern
@@ -46,4 +42,3 @@ async function connectDB() {
 }
 
 export default connectDB;
-

@@ -6,6 +6,14 @@ import * as cookie from 'cookie';
 const JWT_SECRET = process.env.JWT_SECRET;
 const TOKEN_NAME = 'admin_token';
 
+function getJwtSecret(): string {
+  if (!JWT_SECRET) {
+    throw new Error('JWT_SECRET is not configured');
+  }
+
+  return JWT_SECRET;
+}
+
 export interface JWTPayload {
   email: string;
   iat: number;
@@ -41,7 +49,7 @@ export async function verifyPassword(
 export function generateToken(email: string): string {
   return jwt.sign(
     { email },
-    JWT_SECRET,
+    getJwtSecret(),
     { expiresIn: '7d' } // Token expires in 7 days
   );
 }
@@ -50,6 +58,10 @@ export function generateToken(email: string): string {
  * Verify and decode a JWT token
  */
 export function verifyToken(token: string): JWTPayload | null {
+  if (!JWT_SECRET) {
+    return null;
+  }
+
   try {
     return jwt.verify(token, JWT_SECRET) as JWTPayload;
   } catch (error) {
@@ -134,4 +146,3 @@ export async function verifyAdminCredentials(
 
   return verifyPassword(password, adminPasswordHash);
 }
-

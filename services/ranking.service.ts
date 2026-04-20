@@ -214,16 +214,18 @@ export class RankingService {
     let filtered = [...rankings];
 
     // Filter by minimum duration
-    if (filters.minDuration) {
-      filtered = filtered.filter(r => r.totalDuration >= filters.minDuration);
+    if (filters.minDuration !== undefined) {
+      const minDuration = filters.minDuration;
+      filtered = filtered.filter(r => r.totalDuration >= minDuration);
     }
 
     // Filter by maximum duration
     if (filters.maxDuration !== undefined) {
+      const maxDuration = filters.maxDuration;
       filtered = filtered.filter(r => {
         // Keep entries with valid totalDuration that are <= maxDuration
         const duration = r.totalDuration;
-        return duration !== undefined && duration !== null && duration <= filters.maxDuration!;
+        return duration !== undefined && duration !== null && duration <= maxDuration;
       });
     }
 
@@ -326,4 +328,3 @@ export class RankingService {
     };
   }
 }
-

@@ -39,6 +39,9 @@ interface RazorpayInstance {
 
 interface Window {
   Razorpay: new (options: RazorpayOptions) => RazorpayInstance;
+  ReactNativeWebView?: {
+    postMessage: (message: string) => void;
+  };
 }
 
 declare class Razorpay {
@@ -47,4 +50,3 @@ declare class Razorpay {
   close(): void;
   on(event: string, callback: (response: any) => void): void;
 }
-
