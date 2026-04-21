@@ -1,11 +1,10 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 
-const DEFAULT_BACKEND_BASE_URL = 'https://backend.virtuallibrary.in'
-const CONFIGURED_BACKEND_BASE_URL =
+const BACKEND_BASE_URL =
   process.env.BACKEND_URL ||
   process.env.NEXT_PUBLIC_BACKEND_URL ||
   process.env.NEXT_PUBLIC_API_BASE_URL ||
-  DEFAULT_BACKEND_BASE_URL
+  'https://api.virtuallibrary.in'
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const pathParts = req.query.path
@@ -16,8 +15,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const normalizedPath = Array.isArray(pathParts) ? pathParts.join('/') : pathParts
   const incomingUrl = new URL(req.url || '/api/backend', 'http://localhost')
-  const backendBaseUrl = resolveBackendBaseUrl(req)
-  const targetUrl = new URL(`${backendBaseUrl.replace(/\/+$/, '')}/${normalizedPath.replace(/^\/+/, '')}`)
+  const targetUrl = new URL(`${BACKEND_BASE_URL.replace(/\/+$/, '')}/${normalizedPath.replace(/^\/+/, '')}`)
 
   incomingUrl.searchParams.forEach((value, key) => {
     if (key !== 'path') {
@@ -77,19 +75,4 @@ function copyHeader(headers: Headers, key: string, value: string | string[] | un
   }
 
   headers.set(key, Array.isArray(value) ? value.join(', ') : value)
-}
-
-function resolveBackendBaseUrl(req: NextApiRequest) {
-  try {
-    const targetUrl = new URL(CONFIGURED_BACKEND_BASE_URL)
-    const currentHost = req.headers.host
-
-    if (currentHost && targetUrl.host === currentHost) {
-      return DEFAULT_BACKEND_BASE_URL
-    }
-
-    return targetUrl.toString().replace(/\/+$/, '')
-  } catch {
-    return DEFAULT_BACKEND_BASE_URL
-  }
 }

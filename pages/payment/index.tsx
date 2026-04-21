@@ -106,27 +106,16 @@ export default function PaymentPage() {
     }
   }, [])
 
-  function openOtpScreen(message: string) {
-    setAuthMode('unauthenticated')
-    setOtpRequested(false)
-    setOtp('')
-    setScreen('otp')
-    setAuthError(message)
-    setPageError('')
-    setStatusNote('Sign in to continue with payment.')
-    postMobileEvent('AUTH_REQUIRED')
-  }
-
   function ensureAuthorization(message: string) {
     if (tokenStore.getAccessToken()) {
       return true
     }
 
-    if (authMode === 'cookie') {
-      return true
-    }
-
-    openOtpScreen(message)
+    setScreen('otp')
+    setAuthError(message)
+    setPageError('')
+    setStatusNote('Sign in to continue with payment.')
+    postMobileEvent('AUTH_REQUIRED')
     return false
   }
 
@@ -136,12 +125,19 @@ export default function PaymentPage() {
     setCourseError('')
     setStatusNote('Loading payment options...')
     setResult(null)
-    setAuthMode(tokenStore.getAccessToken() ? 'bearer' : 'unknown')
+
+    if (!ensureAuthorization('Log in with your phone number before we load plans.')) {
+      return
+    }
 
     await loadPlans()
   }
 
   async function loadPlans() {
+    if (!ensureAuthorization('Log in with your phone number before we load plans.')) {
+      return
+    }
+
     try {
       setScreen('booting')
       const planIdFromQuery = getQueryParam(router.query.planId)
@@ -150,7 +146,6 @@ export default function PaymentPage() {
           Accept: 'application/json',
         },
       })
-      setAuthMode(tokenStore.getAccessToken() ? 'bearer' : 'cookie')
 
       if (data.requiresCourseSelection) {
         setPlans([])
@@ -183,7 +178,9 @@ export default function PaymentPage() {
     } catch (error) {
       if (error instanceof PaymentApiError && error.status === 401) {
         tokenStore.clear()
-        openOtpScreen('Your session is missing or expired. Sign in with your phone number to continue.')
+        setScreen('otp')
+        setAuthError('Your session is missing or expired. Sign in with your phone number to continue.')
+        postMobileEvent('AUTH_REQUIRED')
         return
       }
 
@@ -231,12 +228,6 @@ export default function PaymentPage() {
       setCourseError('')
       setStatusNote(message || 'Choose a course to continue.')
     } catch (error) {
-      if (error instanceof PaymentApiError && error.status === 401) {
-        tokenStore.clear()
-        openOtpScreen('Your session expired while loading course options. Sign in again to continue.')
-        return
-      }
-
       setScreen('error')
       setPageError(getErrorMessage(error, 'Unable to load course options. Please try again.'))
     } finally {
@@ -276,7 +267,6 @@ export default function PaymentPage() {
         accessToken,
         refreshToken,
       })
-      setAuthMode('bearer')
       postMobileEvent('AUTH_SUCCESS')
       await loadPlans()
     } catch (error) {
@@ -323,12 +313,6 @@ export default function PaymentPage() {
 
       await loadPlans()
     } catch (error) {
-      if (error instanceof PaymentApiError && error.status === 401) {
-        tokenStore.clear()
-        openOtpScreen('Your session expired while saving your course. Sign in again to continue.')
-        return
-      }
-
       setCourseError(getErrorMessage(error, 'Unable to save your course. Please try again.'))
     } finally {
       setCourseLoading(false)
@@ -364,7 +348,8 @@ export default function PaymentPage() {
     } catch (error) {
       if (error instanceof PaymentApiError && error.status === 401) {
         tokenStore.clear()
-        openOtpScreen('Your session expired. Sign in again to continue.')
+        setScreen('otp')
+        setAuthError('Your session expired. Sign in again to continue.')
         setCheckoutLoading(false)
         return
       }
@@ -454,12 +439,9 @@ export default function PaymentPage() {
         })
         setStatusNote('Payment completed successfully.')
         postMobileEvent('PAYMENT_SUCCESS', {
-          status: 'success',
           planId: order.plan.planId,
           courseId: order.course.courseId,
           paymentStatus: verification.paymentStatus,
-          returnUrl: verification.returnUrl,
-          redirectUrl: getReturnTarget(verification.returnUrl, 'success'),
         })
         scheduleReturnToApp(verification.returnUrl, 'success')
         return
@@ -476,14 +458,10 @@ export default function PaymentPage() {
         })
         setStatusNote('Waiting for final confirmation...')
         postMobileEvent('PAYMENT_PENDING', {
-          status: 'pending',
           planId: order.plan.planId,
           courseId: order.course.courseId,
           paymentStatus: verification.paymentStatus,
-          returnUrl: verification.returnUrl,
-          redirectUrl: getReturnTarget(verification.returnUrl, 'pending'),
         })
-        scheduleReturnToApp(verification.returnUrl, 'pending')
         startPendingAccessPoll({
           courseId: order.course.courseId,
           slug: order.course.slug,
@@ -502,22 +480,12 @@ export default function PaymentPage() {
       })
       setStatusNote('Verification failed.')
       postMobileEvent('PAYMENT_FAILED', {
-        status: 'failed',
         planId: order.plan.planId,
         courseId: order.course.courseId,
         paymentStatus: verification.paymentStatus,
-        returnUrl: verification.returnUrl,
-        redirectUrl: getReturnTarget(verification.returnUrl, 'failed'),
       })
       scheduleReturnToApp(verification.returnUrl, 'failed')
     } catch (error) {
-      if (error instanceof PaymentApiError && error.status === 401) {
-        tokenStore.clear()
-        openOtpScreen('Your session expired before payment verification completed. Sign in again to refresh access.')
-        setCheckoutLoading(false)
-        return
-      }
-
       setCheckoutLoading(false)
       setScreen('failed')
       setResult({
@@ -556,10 +524,7 @@ export default function PaymentPage() {
           })
           setStatusNote('Payment completed successfully.')
           postMobileEvent('PAYMENT_SUCCESS', {
-            status: 'success',
             courseId: context.courseId,
-            returnUrl: context.returnUrl,
-            redirectUrl: getReturnTarget(context.returnUrl, 'success'),
           })
           scheduleReturnToApp(context.returnUrl, 'success')
           return
