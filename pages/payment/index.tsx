@@ -23,6 +23,7 @@ import {
 } from '@/lib/payment-client'
 
 type ScreenState = 'booting' | 'otp' | 'course' | 'ready' | 'processing' | 'pending' | 'success' | 'failed' | 'error'
+type AuthMode = 'unknown' | 'cookie' | 'bearer' | 'unauthenticated'
 
 type ResultState = {
   title: string
@@ -36,6 +37,7 @@ export default function PaymentPage() {
   const pendingPollRef = useRef<number | null>(null)
   const deepLinkTimeoutRef = useRef<number | null>(null)
 
+  const [authMode, setAuthMode] = useState<AuthMode>('unknown')
   const [screen, setScreen] = useState<ScreenState>('booting')
   const [plans, setPlans] = useState<BillingPlan[]>([])
   const [selectedPlanId, setSelectedPlanId] = useState('')
@@ -538,8 +540,18 @@ export default function PaymentPage() {
     }, 3000)
   }
 
-  function scheduleReturnToApp(returnUrl: string | undefined, status: 'success' | 'failed') {
+  function getReturnTarget(returnUrl: string | undefined, status: 'success' | 'pending' | 'failed') {
     if (!returnUrl) {
+      return null
+    }
+
+    return buildReturnUrl(returnUrl, status)
+  }
+
+  function scheduleReturnToApp(returnUrl: string | undefined, status: 'success' | 'pending' | 'failed') {
+    const targetUrl = getReturnTarget(returnUrl, status)
+
+    if (!targetUrl) {
       return
     }
 
@@ -547,9 +559,15 @@ export default function PaymentPage() {
       window.clearTimeout(deepLinkTimeoutRef.current)
     }
 
+    postMobileEvent('OPEN_RETURN_URL', {
+      status,
+      returnUrl,
+      redirectUrl: targetUrl,
+    })
+
     deepLinkTimeoutRef.current = window.setTimeout(() => {
-      window.location.href = buildReturnUrl(returnUrl, status)
-    }, 1200)
+      window.location.assign(targetUrl)
+    }, 600)
   }
 
   function handleReturnToApp(status: 'success' | 'pending' | 'failed') {
@@ -809,6 +827,7 @@ export default function PaymentPage() {
                       type="button"
                       onClick={() => {
                         tokenStore.clear()
+                        setAuthMode('unauthenticated')
                         setOtpRequested(false)
                         setOtp('')
                         setScreen('otp')
