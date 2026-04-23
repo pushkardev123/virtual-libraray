@@ -32,6 +32,58 @@ type ResultState = {
   returnUrl?: string
 }
 
+type PlanMetrics = {
+  monthlyPaise: number
+  dailyPaise: number
+  compareAmountPaise: number | null
+  savingsPaise: number
+  savePercent: number
+}
+
+const HERO_PILLS = [
+  '24/7 Study Rooms',
+  'Focus Mode',
+  'Live Mentorship',
+  'Mental Health Support',
+  'Exam Communities',
+]
+
+const INCLUDED_FEATURES = [
+  '24x7 Live Study Rooms',
+  'Focus App Blocker',
+  'Revision Tracker',
+  'Live Mentorship',
+  'Psychiatrist Sessions',
+  'Daily Yoga & Meditation',
+  'Exam Communities',
+  'Girls-Only Group',
+]
+
+const TESTIMONIALS = [
+  {
+    name: 'Rajesh S.',
+    exam: 'UPSC Aspirant',
+    quote:
+      'Study rooms changed how I prepare. Seeing focused people every day made consistency easier.',
+    initials: 'RS',
+    tone: 'violet',
+  },
+  {
+    name: 'Priya A.',
+    exam: 'NEET PG',
+    quote:
+      'The mentorship and mental health support made this feel sustainable instead of overwhelming.',
+    initials: 'PA',
+    tone: 'emerald',
+  },
+]
+
+const FOOTER_ASSURANCES = [
+  'Secure Pay',
+  'Instant Access',
+  'Cancel Anytime',
+]
+
 export default function PaymentPage() {
   const router = useRouter()
   const pendingPollRef = useRef<number | null>(null)
@@ -47,8 +99,11 @@ export default function PaymentPage() {
   const [otp, setOtp] = useState('')
   const [otpRequested, setOtpRequested] = useState(false)
   const [otpLoading, setOtpLoading] = useState(false)
+  const [otpAction, setOtpAction] = useState<'send' | 'verify' | null>(null)
   const [checkoutLoading, setCheckoutLoading] = useState(false)
+  const [couponCode, setCouponCode] = useState('')
   const [razorpayReady, setRazorpayReady] = useState(false)
+  const [showSuccessModal, setShowSuccessModal] = useState(false)
   const [result, setResult] = useState<ResultState | null>(null)
   const [statusNote, setStatusNote] = useState('Loading payment options...')
   const [selectedCourse, setSelectedCourse] = useState<CourseSummary | null>(null)
@@ -81,10 +136,68 @@ export default function PaymentPage() {
       groups.get(key)?.plans.push(plan)
     })
 
-    return Array.from(groups.values()).sort((left, right) => {
-      return (left.course.displayOrder || 0) - (right.course.displayOrder || 0)
-    })
+    return Array.from(groups.values())
+      .map((group) => ({
+        course: group.course,
+        plans: [...group.plans].sort((left, right) => left.durationMonths - right.durationMonths),
+      }))
+      .sort((left, right) => {
+        return (left.course.displayOrder || 0) - (right.course.displayOrder || 0)
+      })
   }, [plans])
+
+  const activeCourseId = selectedCourse?.courseId || groupedPlans[0]?.course.courseId || ''
+
+  const activeGroup = useMemo(() => {
+    return groupedPlans.find((group) => group.course.courseId === activeCourseId) || groupedPlans[0] || null
+  }, [activeCourseId, groupedPlans])
+
+  const activePlans = activeGroup?.plans || []
+
+  const basePlan = useMemo(() => {
+    return [...activePlans].sort((left, right) => {
+      if (left.durationMonths !== right.durationMonths) {
+        return left.durationMonths - right.durationMonths
+      }
+
+      return left.amountPaise - right.amountPaise
+    })[0] || null
+  }, [activePlans])
+
+  const popularPlanId = useMemo(() => {
+    if (!activePlans.length) {
+      return ''
+    }
+
+    return (
+      activePlans.find((plan) => plan.durationMonths === 12)?.planId ||
+      activePlans.find((plan) => plan.durationMonths === 6)?.planId ||
+      activePlans[Math.min(1, activePlans.length - 1)]?.planId ||
+      activePlans[0]?.planId ||
+      ''
+    )
+  }, [activePlans])
+
+  const selectedPlanMetrics = useMemo(() => {
+    return selectedPlan ? getPlanMetrics(selectedPlan, basePlan) : null
+  }, [basePlan, selectedPlan])
+
+  const canRetryCheckout = screen === 'ready' || screen === 'failed'
+  const canSelectPlan = screen === 'ready' || screen === 'failed'
+  const isCustomCourseSelected = selectedCourseChoice === customCourseOption?.key
+  const selectedCoursePreview =
+    selectedCourse ||
+    courseOptions.find((course) => course.courseId === selectedCourseChoice) ||
+    (isCustomCourseSelected && customCourseTitle.trim()
+      ? {
+          courseId: '',
+          slug: 'custom-course',
+          title: customCourseTitle.trim(),
+          description: 'Custom exam selection',
+          displayOrder: 9999,
+          kind: 'CUSTOM',
+        }
+      : null)
 
   useEffect(() => {
     if (!router.isReady) {
@@ -93,6 +206,18 @@ export default function PaymentPage() {
 
     void bootstrap()
   }, [router.isReady])
+
+  useEffect(() => {
+    if (!activeGroup?.plans.length) {
+      return
+    }
+
+    const hasSelectedPlan = activeGroup.plans.some((plan) => plan.planId === selectedPlanId)
+
+    if (!hasSelectedPlan) {
+      setSelectedPlanId(activeGroup.plans[0].planId)
+    }
+  }, [activeGroup, selectedPlanId])
 
   useEffect(() => {
     return () => {
@@ -246,6 +371,7 @@ export default function PaymentPage() {
 
   async function handleRequestOtp() {
     setOtpLoading(true)
+    setOtpAction('send')
     setAuthError('')
 
     try {
@@ -256,11 +382,13 @@ export default function PaymentPage() {
       setAuthError(getErrorMessage(error, 'Could not send OTP. Please try again.'))
     } finally {
       setOtpLoading(false)
+      setOtpAction(null)
     }
   }
 
   async function handleVerifyOtp() {
     setOtpLoading(true)
+    setOtpAction('verify')
     setAuthError('')
 
     try {
@@ -283,6 +411,7 @@ export default function PaymentPage() {
       setAuthError(getErrorMessage(error, 'OTP verification failed. Please try again.'))
     } finally {
       setOtpLoading(false)
+      setOtpAction(null)
     }
   }
 
@@ -296,11 +425,9 @@ export default function PaymentPage() {
       return
     }
 
-    if (selectedCourseChoice === customCourseOption?.key) {
-      if (!customCourseTitle.trim()) {
-        setCourseError('Enter your exam name to continue.')
-        return
-      }
+    if (selectedCourseChoice === customCourseOption?.key && !customCourseTitle.trim()) {
+      setCourseError('Enter your exam name to continue.')
+      return
     }
 
     setCourseLoading(true)
@@ -352,6 +479,7 @@ export default function PaymentPage() {
 
     setCheckoutLoading(true)
     setPageError('')
+    setResult(null)
     setStatusNote('Creating your order...')
 
     try {
@@ -389,7 +517,7 @@ export default function PaymentPage() {
         contact: order.user?.phoneE164,
       },
       theme: {
-        color: '#171717',
+        color: '#7c3aed',
       },
       handler: async (response: RazorpaySuccessResponse) => {
         await handleVerifyPayment(order, response)
@@ -446,6 +574,7 @@ export default function PaymentPage() {
 
         setCheckoutLoading(false)
         setScreen('success')
+        setShowSuccessModal(true)
         setResult({
           title: 'Access unlocked',
           message: `Payment confirmed for ${order.course.title}. You can continue in the app or stay on this page.`,
@@ -461,7 +590,6 @@ export default function PaymentPage() {
           returnUrl: verification.returnUrl,
           redirectUrl: getReturnTarget(verification.returnUrl, 'success'),
         })
-        scheduleReturnToApp(verification.returnUrl, 'success')
         return
       }
 
@@ -548,6 +676,7 @@ export default function PaymentPage() {
           }
 
           setScreen('success')
+          setShowSuccessModal(true)
           setResult({
             title: 'Access unlocked',
             message: 'Your course access is active now.',
@@ -561,11 +690,10 @@ export default function PaymentPage() {
             returnUrl: context.returnUrl,
             redirectUrl: getReturnTarget(context.returnUrl, 'success'),
           })
-          scheduleReturnToApp(context.returnUrl, 'success')
           return
         }
       } catch {
-        // Polling is best-effort; keep the user on the pending state.
+        // Best-effort polling while the payment is pending.
       }
 
       if (attempts >= 8 && pendingPollRef.current) {
@@ -613,21 +741,504 @@ export default function PaymentPage() {
     scheduleReturnToApp(result.returnUrl, status)
   }
 
-  const statusTone = result?.tone || 'warning'
-  const isCustomCourseSelected = selectedCourseChoice === customCourseOption?.key
-  const selectedCoursePreview =
-    selectedCourse ||
-    courseOptions.find((course) => course.courseId === selectedCourseChoice) ||
-    (isCustomCourseSelected && customCourseTitle.trim()
-      ? {
-          courseId: '',
-          slug: 'custom-course',
-          title: customCourseTitle.trim(),
-          description: 'Custom exam selection',
-          displayOrder: 9999,
-          kind: 'CUSTOM',
-        }
-      : null)
+  function handleCloseSuccessModal() {
+    setShowSuccessModal(false)
+
+    if (result?.returnUrl) {
+      handleReturnToApp('success')
+    }
+  }
+
+  function handleBack() {
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      router.back()
+      return
+    }
+
+    void router.push('/')
+  }
+
+  function handleSelectCourseGroup(courseId: string) {
+    const nextGroup = groupedPlans.find((group) => group.course.courseId === courseId)
+
+    if (!nextGroup) {
+      return
+    }
+
+    setSelectedCourse(nextGroup.course)
+    setSelectedPlanId(nextGroup.plans[0]?.planId || '')
+  }
+
+  function handleApplyCoupon() {
+    if (!couponCode.trim() || typeof window === 'undefined') {
+      return
+    }
+
+    window.alert('Coupon code support is coming soon.')
+  }
+
+  function renderBodyContent() {
+    if (screen === 'booting') {
+      return (
+        <div className="py-14">
+          <LoadingPanel label="Preparing your checkout..." />
+        </div>
+      )
+    }
+
+    if (screen === 'otp') {
+      return (
+        <div className="space-y-4">
+          <SectionHeading
+            eyebrow="Sign In"
+            title="Verify your phone number"
+            description="We need a valid session before creating the order. Enter your mobile number and the OTP from the backend."
+          />
+
+          <InputField
+            label="Phone number"
+            hint="+91"
+            value={phone}
+            onChange={(value) => setPhone(value.replace(/\D/g, '').slice(0, 10))}
+            placeholder="9876543210"
+            inputMode="numeric"
+            disabled={otpLoading}
+          />
+
+          {otpRequested && (
+            <InputField
+              label="OTP"
+              value={otp}
+              onChange={(value) => setOtp(value.replace(/\D/g, '').slice(0, 6))}
+              placeholder="Enter the 6-digit OTP"
+              inputMode="numeric"
+              disabled={otpLoading}
+            />
+          )}
+
+          {authError && <MessageBanner tone="danger">{authError}</MessageBanner>}
+
+          <div className="grid gap-3">
+            {otpRequested ? (
+              <>
+                <button
+                  type="button"
+                  onClick={handleVerifyOtp}
+                  disabled={otpLoading || otp.length < 4}
+                  className="rounded-[18px] bg-[#7c3aed] px-4 py-3.5 text-sm font-semibold text-white shadow-[0_16px_32px_rgba(124,58,237,0.25)] transition hover:bg-[#6d28d9] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {otpLoading && otpAction === 'verify' ? 'Verifying...' : 'Verify and continue'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleRequestOtp}
+                  disabled={otpLoading}
+                  className="rounded-[18px] border border-[#d9cdf6] bg-white px-4 py-3.5 text-sm font-semibold text-[#5b21b6] transition hover:border-[#7c3aed] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {otpLoading && otpAction === 'send' ? 'Resending OTP...' : 'Resend OTP'}
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={handleRequestOtp}
+                disabled={otpLoading}
+                className="rounded-[18px] bg-[#7c3aed] px-4 py-3.5 text-sm font-semibold text-white shadow-[0_16px_32px_rgba(124,58,237,0.25)] transition hover:bg-[#6d28d9] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {otpLoading && otpAction === 'send' ? 'Sending OTP...' : 'Send OTP'}
+              </button>
+            )}
+          </div>
+        </div>
+      )
+    }
+
+    if (screen === 'course') {
+      return (
+        <div className="space-y-4">
+          <SectionHeading
+            eyebrow="Choose Your Course"
+            title="Pick the exam you are preparing for"
+            description="We load plan options based on your course. Select one from the catalog or create a custom exam title."
+          />
+
+          <div className="grid gap-3">
+            {courseOptions.map((course) => {
+              const isActive = selectedCourseChoice === course.courseId
+
+              return (
+                <button
+                  key={course.courseId}
+                  type="button"
+                  onClick={() => setSelectedCourseChoice(course.courseId)}
+                  className={cn(
+                    'rounded-[22px] border p-4 text-left transition',
+                    isActive
+                      ? 'border-[#7c3aed] bg-[#f3edff] shadow-[0_18px_34px_rgba(124,58,237,0.14)]'
+                      : 'border-[#ebe3fb] bg-white hover:border-[#cbb7f7]'
+                  )}
+                >
+                  <div className="flex items-start gap-3">
+                    <SelectionDot active={isActive} />
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-900">{course.title}</p>
+                      <p className="mt-1 text-xs leading-5 text-slate-500">
+                        {course.description || 'Load the matching billing plans for this exam.'}
+                      </p>
+                    </div>
+                  </div>
+                </button>
+              )
+            })}
+
+            {customCourseOption && (
+              <button
+                type="button"
+                onClick={() => setSelectedCourseChoice(customCourseOption.key)}
+                className={cn(
+                  'rounded-[22px] border p-4 text-left transition',
+                  isCustomCourseSelected
+                    ? 'border-[#7c3aed] bg-[#f3edff] shadow-[0_18px_34px_rgba(124,58,237,0.14)]'
+                    : 'border-[#ebe3fb] bg-white hover:border-[#cbb7f7]'
+                )}
+              >
+                <div className="flex items-start gap-3">
+                  <SelectionDot active={isCustomCourseSelected} />
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-900">{customCourseOption.title}</p>
+                    <p className="mt-1 text-xs leading-5 text-slate-500">
+                      Create a custom exam track if your course is not listed here.
+                    </p>
+                  </div>
+                </div>
+              </button>
+            )}
+          </div>
+
+          {isCustomCourseSelected && (
+            <InputField
+              label="Exam name"
+              value={customCourseTitle}
+              onChange={setCustomCourseTitle}
+              placeholder="For example, AFCAT"
+              disabled={courseLoading}
+            />
+          )}
+
+          {courseError && <MessageBanner tone="danger">{courseError}</MessageBanner>}
+
+          <div className="grid gap-3">
+            <button
+              type="button"
+              onClick={handleSaveCourseSelection}
+              disabled={courseLoading}
+              className="rounded-[18px] bg-[#7c3aed] px-4 py-3.5 text-sm font-semibold text-white shadow-[0_16px_32px_rgba(124,58,237,0.25)] transition hover:bg-[#6d28d9] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {courseLoading ? 'Saving course...' : 'Continue to plans'}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                tokenStore.clear()
+                openOtpScreen('Sign in again to choose a different account.')
+              }}
+              className="rounded-[18px] border border-[#d9cdf6] bg-white px-4 py-3.5 text-sm font-semibold text-[#5b21b6] transition hover:border-[#7c3aed]"
+            >
+              Use another account
+            </button>
+          </div>
+        </div>
+      )
+    }
+
+    return (
+      <div className="space-y-7">
+        {groupedPlans.length > 1 && (
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {groupedPlans.map((group) => {
+              const isActive = group.course.courseId === activeGroup?.course.courseId
+
+              return (
+                <button
+                  key={group.course.courseId}
+                  type="button"
+                  onClick={() => handleSelectCourseGroup(group.course.courseId)}
+                  disabled={!canSelectPlan}
+                  className={cn(
+                    'shrink-0 rounded-full px-4 py-2 text-xs font-semibold transition',
+                    isActive
+                      ? 'bg-[#7c3aed] text-white shadow-[0_14px_24px_rgba(124,58,237,0.25)]'
+                      : 'bg-white text-slate-600 ring-1 ring-[#e7dcfb]',
+                    !canSelectPlan && 'cursor-not-allowed opacity-70'
+                  )}
+                >
+                  {group.course.title}
+                </button>
+              )
+            })}
+          </div>
+        )}
+
+        {selectedPlanMetrics && (
+          <div className="rounded-[24px] border border-[#eee6fb] bg-white px-5 py-5 shadow-[0_10px_24px_rgba(109,40,217,0.05)]">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#8b5cf6]">Selected Plan</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">
+                  {selectedPlan?.name || `${selectedPlan?.durationMonths || 0} Month Plan`}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Costs about {formatCurrency(selectedPlanMetrics.dailyPaise, selectedPlan?.currency)} per day
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-2xl font-extrabold tracking-tight text-[#6d28d9]">
+                  {formatCurrency(selectedPlan?.amountPaise || 0, selectedPlan?.currency)}
+                </p>
+                <p className="text-xs font-medium text-slate-500">
+                  {formatCurrency(selectedPlanMetrics.monthlyPaise, selectedPlan?.currency)} /mo
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {result && screen !== 'success' && (
+          <div className={cn(
+            'rounded-[22px] border px-4 py-4',
+            result.tone === 'success' && 'border-emerald-200 bg-emerald-50',
+            result.tone === 'warning' && 'border-amber-200 bg-amber-50',
+            result.tone === 'danger' && 'border-rose-200 bg-rose-50'
+          )}>
+            <p className={cn(
+              'text-sm font-semibold',
+              result.tone === 'success' && 'text-emerald-900',
+              result.tone === 'warning' && 'text-amber-900',
+              result.tone === 'danger' && 'text-rose-900'
+            )}>
+              {result.title}
+            </p>
+            <p className="mt-1 text-xs leading-5 text-slate-600">{result.message}</p>
+            {result.returnUrl && (
+              <button
+                type="button"
+                onClick={() => handleReturnToApp(screen === 'pending' ? 'pending' : 'failed')}
+                className="mt-3 inline-flex items-center rounded-full bg-white px-4 py-2 text-xs font-semibold text-[#6d28d9] ring-1 ring-[#d9cdf6] transition hover:ring-[#7c3aed]"
+              >
+                Return to app
+              </button>
+            )}
+          </div>
+        )}
+
+        {pageError && <MessageBanner tone="danger">{pageError}</MessageBanner>}
+
+        {screen === 'error' && pageError && (
+          <div className="grid gap-3">
+            <button
+              type="button"
+              onClick={() => void bootstrap()}
+              className="rounded-[18px] bg-[#7c3aed] px-4 py-3.5 text-sm font-semibold text-white shadow-[0_16px_32px_rgba(124,58,237,0.25)] transition hover:bg-[#6d28d9]"
+            >
+              Retry
+            </button>
+            <a
+              href="/payment/error?code=HANDOFF_INVALID"
+              className="rounded-[18px] border border-[#d9cdf6] bg-white px-4 py-3.5 text-center text-sm font-semibold text-[#5b21b6] transition hover:border-[#7c3aed]"
+            >
+              Open help
+            </a>
+          </div>
+        )}
+
+        {activePlans.length > 0 && (
+          <div>
+            <SectionHeading
+              eyebrow="Choose Your Plan"
+              title="Pick the access window that fits your prep"
+              description="All plans unlock the same system. The longer options reduce your monthly cost."
+            />
+
+            <div className="mt-5 space-y-4">
+              {activePlans.map((plan) => {
+                const metrics = getPlanMetrics(plan, basePlan)
+                const tag = getPlanTag(plan, metrics, popularPlanId)
+
+                return (
+                  <PlanOptionCard
+                    key={plan.planId}
+                    plan={plan}
+                    metrics={metrics}
+                    active={selectedPlanId === plan.planId}
+                    disabled={!canSelectPlan}
+                    tag={tag}
+                    onSelect={() => setSelectedPlanId(plan.planId)}
+                  />
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        <div className="grid gap-4">
+          {TESTIMONIALS.map((testimonial) => (
+            <div key={testimonial.name} className="rounded-[24px] border border-[#eee6fb] bg-white p-5">
+              <div className="flex items-start gap-3">
+                <div className={cn(
+                  'flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white',
+                  testimonial.tone === 'violet' ? 'bg-[#7c3aed]' : 'bg-[#10b981]'
+                )}>
+                  {testimonial.initials}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-slate-900">{testimonial.name}</p>
+                  <p className="mt-0.5 text-[11px] font-medium uppercase tracking-[0.22em] text-slate-400">{testimonial.exam}</p>
+                </div>
+              </div>
+              <p className="mt-4 text-sm leading-7 text-slate-600">&quot;{testimonial.quote}&quot;</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="rounded-[24px] border border-[#eee6fb] bg-white p-5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">Have a coupon code?</p>
+              <p className="mt-1 text-sm leading-6 text-slate-500">
+                Enter your code below. Coupon support is being wired into this checkout.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 flex gap-3">
+            <input
+              type="text"
+              value={couponCode}
+              onChange={(event) => setCouponCode(event.target.value.toUpperCase())}
+              placeholder="Enter coupon code"
+              className="min-w-0 flex-1 rounded-[18px] border border-[#e6def7] bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-[#a78bfa] focus:ring-0"
+            />
+
+            <button
+              type="button"
+              onClick={handleApplyCoupon}
+              disabled={!couponCode.trim()}
+              className="shrink-0 rounded-[18px] bg-[#f3edff] px-5 py-3 text-sm font-semibold text-[#6d28d9] transition hover:bg-[#e8ddff] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Apply
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">Everything included</p>
+              <p className="mt-1 text-xs text-slate-500">Same benefits across all current plans.</p>
+            </div>
+            <span className="rounded-full bg-[#f3edff] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-[#7c3aed]">
+              {INCLUDED_FEATURES.length} features
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            {INCLUDED_FEATURES.map((feature) => (
+              <div
+                key={feature}
+                className="flex min-h-[68px] items-center gap-2 rounded-[18px] border border-[#ebe3fb] bg-white px-3 py-3 text-xs font-medium text-slate-700 shadow-[0_10px_20px_rgba(90,24,154,0.04)]"
+              >
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#e9ddff] text-[#6d28d9]">
+                  <CheckIcon className="h-3.5 w-3.5" />
+                </span>
+                <span>{feature}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  function renderFooterAction() {
+    if (screen === 'booting' || screen === 'otp' || screen === 'course' || screen === 'error' || screen === 'success') {
+      return null
+    }
+
+    const footerPrice = selectedPlanMetrics && selectedPlan
+      ? `${formatCurrency(selectedPlanMetrics.monthlyPaise, selectedPlan.currency)} /mo`
+      : null
+
+    let label = 'Start Learning Now'
+    let disabled = false
+    let onClick: (() => void) | undefined = undefined
+    let helper = 'Secure payment powered by Razorpay.'
+
+    if (screen === 'processing') {
+      label = 'Verifying payment...'
+      disabled = true
+      helper = 'Do not close this page while verification is running.'
+    } else if (screen === 'pending') {
+      label = result?.returnUrl ? 'Return to app' : 'Payment pending'
+      disabled = !result?.returnUrl
+      onClick = result?.returnUrl ? () => handleReturnToApp('pending') : undefined
+      helper = 'Access will unlock as soon as backend verification completes.'
+    } else if (screen === 'failed') {
+      label = 'Try Secure Checkout Again'
+      disabled = checkoutLoading || !razorpayReady
+      onClick = handlePayNow
+      helper = 'Retry the order once you are ready.'
+    } else {
+      label = checkoutLoading ? 'Preparing checkout...' : 'Start Learning Now'
+      disabled = checkoutLoading || !razorpayReady || !selectedPlan || !canRetryCheckout
+      onClick = handlePayNow
+    }
+
+    return (
+      <div className="mt-6 rounded-t-[28px] border-t border-[#ece2ff] bg-[#fbf8ff] px-4 pb-4 pt-4">
+        <div className="grid grid-cols-3 gap-2">
+          {FOOTER_ASSURANCES.map((item) => (
+            <div
+              key={item}
+              className="rounded-[18px] border border-[#ebe3fb] bg-white px-3 py-3 text-center text-[11px] font-semibold text-slate-500"
+            >
+              {item}
+            </div>
+          ))}
+        </div>
+
+        <button
+          type="button"
+          onClick={onClick}
+          disabled={disabled}
+          className="mt-3 flex w-full items-center justify-center gap-2 rounded-[18px] bg-[#7c3aed] px-4 py-4 text-sm font-semibold text-white shadow-[0_18px_34px_rgba(124,58,237,0.28)] transition hover:bg-[#6d28d9] disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <span>{label}</span>
+          {footerPrice && (screen === 'ready' || screen === 'failed') && <span className="text-white/80">{footerPrice}</span>}
+          {(screen === 'ready' || screen === 'failed') && <ArrowRightIcon className="h-4 w-4" />}
+        </button>
+
+        <p className="mt-2 text-center text-[11px] leading-5 text-slate-500">
+          Secure payment, instant access, no hidden fees. {helper}
+        </p>
+      </div>
+    )
+  }
+
+  const heroTitle =
+    screen === 'otp'
+      ? 'Sign in to unlock your checkout'
+      : screen === 'course'
+        ? 'Choose the right exam track first'
+        : 'Your complete study system awaits'
+
+  const heroDescription =
+    screen === 'otp'
+      ? 'Secure your access with OTP verification before we create the payment order.'
+      : screen === 'course'
+        ? 'Your plan options depend on your exam. Pick a course and we will load the matching pricing.'
+        : 'Study rooms, focus tools, mentorship, wellness support, and exam communities in one plan.'
 
   return (
     <>
@@ -645,439 +1256,427 @@ export default function PaymentPage() {
         onError={() => setPageError('Could not load Razorpay Checkout. Please refresh and try again.')}
       />
 
-      <div className="min-h-screen bg-[#f9f9fb] text-slate-900">
-        <div
-          className="relative overflow-hidden bg-[#6b21a8]"
-          style={{
-            backgroundImage: "url('/img/banner-bg.jpg')",
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-          }}
-        >
-          <div className="absolute inset-0 bg-gradient-to-r from-[#6b21a8]/95 via-[#6b21a8]/90 to-[#6b21a8]/80" />
-          <div className="relative z-10 mx-auto max-w-6xl px-4 pb-28 pt-8 sm:px-6 lg:px-8">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.32em] text-[#d3b8ff]">Virtual Library</p>
-                <h1 className="mt-4 text-4xl font-semibold tracking-tight text-white sm:text-5xl">
-                  Secure membership checkout
-                </h1>
-                <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-200 sm:text-base">
-                  This payment flow lives inside the app and on the web, but it should still feel like the same Virtual
-                  Library product. Complete payment here and unlock access after backend verification.
-                </p>
-              </div>
+      <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.95),_rgba(243,236,255,1)_38%,_rgba(239,235,248,1)_100%)] px-3 py-4 text-slate-900 sm:px-6 sm:py-8">
+        <div className="mx-auto max-w-[440px]">
+          <div className="overflow-hidden rounded-[34px] border border-white/70 bg-white shadow-[0_30px_80px_rgba(76,29,149,0.16)]">
+            <div className="relative overflow-hidden bg-[linear-gradient(160deg,#7024e6_0%,#8d48f5_55%,#6d28d9_100%)] px-4 pb-5 pt-4 text-white">
+              <div className="absolute -right-10 top-0 h-32 w-32 rounded-full bg-white/10 blur-3xl" />
+              <div className="absolute left-[-20%] top-[48%] h-40 w-40 rounded-full bg-[#c084fc]/30 blur-3xl" />
 
-              <div className="hidden rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-right shadow-sm backdrop-blur sm:block">
-                <p className="text-xs uppercase tracking-[0.2em] text-[#d3b8ff]">Status</p>
-                <p className="mt-1 text-sm font-medium text-white">{statusNote}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="relative mx-auto -mt-16 max-w-6xl px-4 pb-10 sm:px-6 lg:px-8">
-          <div className="grid gap-6 lg:grid-cols-[1.4fr_0.9fr]">
-            <section className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-[0_24px_80px_rgba(15,23,42,0.10)] sm:p-8">
-              {screen === 'booting' && (
-                <LoadingPanel label="Preparing your checkout..." />
-              )}
-
-              {screen === 'otp' && (
-                <div className="max-w-lg">
-                  <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[#6b21a8]">Sign in to continue</p>
-                  <h2 className="mt-3 text-2xl font-semibold text-slate-950">Verify your phone number</h2>
-                  <p className="mt-3 text-sm leading-6 text-slate-600">
-                    We need an access token before calling the billing APIs. Enter your mobile number and the OTP from
-                    the backend.
-                  </p>
-
-                  <div className="mt-8 space-y-4">
-                    <div>
-                      <label htmlFor="phone" className="mb-2 block text-sm font-medium text-slate-700">
-                        Phone number
-                      </label>
-                      <div className="flex items-center rounded-2xl border border-slate-200 bg-[#f9f9fb] px-4">
-                        <span className="mr-3 text-sm font-medium text-slate-500">+91</span>
-                        <input
-                          id="phone"
-                          type="tel"
-                          inputMode="numeric"
-                          autoComplete="tel-national"
-                          placeholder="9876543210"
-                          value={phone}
-                          onChange={(event) => setPhone(event.target.value.replace(/\D/g, '').slice(0, 10))}
-                          className="w-full border-0 bg-transparent px-0 py-4 text-base text-slate-900 placeholder:text-slate-400 focus:ring-0"
-                          disabled={otpLoading}
-                        />
-                      </div>
-                    </div>
-
-                    {otpRequested && (
-                      <div>
-                        <label htmlFor="otp" className="mb-2 block text-sm font-medium text-slate-700">
-                          OTP
-                        </label>
-                        <input
-                          id="otp"
-                          type="text"
-                          inputMode="numeric"
-                          autoComplete="one-time-code"
-                          placeholder="Enter the 6-digit OTP"
-                          value={otp}
-                          onChange={(event) => setOtp(event.target.value.replace(/\D/g, '').slice(0, 6))}
-                          className="block w-full rounded-2xl border border-slate-200 bg-[#f9f9fb] px-4 py-4 text-base text-slate-900 placeholder:text-slate-400 focus:border-[#a78bfa] focus:ring-0"
-                          disabled={otpLoading}
-                        />
-                      </div>
-                    )}
-
-                    {authError && (
-                      <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                        {authError}
-                      </div>
-                    )}
-
-                    <div className="flex flex-col gap-3 sm:flex-row">
-                      <button
-                        type="button"
-                        onClick={handleRequestOtp}
-                        disabled={otpLoading}
-                        className="inline-flex items-center justify-center rounded-full bg-black px-6 py-3 text-sm font-medium text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {otpLoading && !otpRequested ? 'Sending OTP...' : 'Send OTP'}
-                      </button>
-
-                      {otpRequested && (
-                        <button
-                          type="button"
-                          onClick={handleVerifyOtp}
-                          disabled={otpLoading || otp.length < 4}
-                          className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-6 py-3 text-sm font-medium text-slate-900 transition hover:border-[#a78bfa] disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {otpLoading ? 'Verifying...' : 'Verify and continue'}
-                        </button>
-                      )}
-                    </div>
-
-                    <p className="text-xs leading-5 text-slate-500">
-                      If this page was opened from the app and the handoff expired, reopen checkout from the app instead
-                      of refreshing repeatedly.
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {screen === 'course' && (
-                <div className="space-y-6">
-                  <div className="max-w-2xl">
-                    <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[#6b21a8]">Choose a course</p>
-                    <h2 className="mt-3 text-2xl font-semibold text-slate-950">Choose a course to continue</h2>
-                    <p className="mt-3 text-sm leading-6 text-slate-600">
-                      Your billing plans depend on the exam you are preparing for. Pick a catalog course or add a custom
-                      exam title, then we&apos;ll load the right plans for you.
-                    </p>
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {courseOptions.map((course) => {
-                      const isActive = selectedCourseChoice === course.courseId
-
-                      return (
-                        <button
-                          key={course.courseId}
-                          type="button"
-                          onClick={() => setSelectedCourseChoice(course.courseId)}
-                          className={`rounded-[1.75rem] border px-5 py-5 text-left transition ${
-                            isActive
-                              ? 'border-[#6b21a8] bg-[#6b21a8] text-white shadow-[0_18px_40px_rgba(107,33,168,0.25)]'
-                              : 'border-slate-200 bg-[#f9f9fb] text-slate-900 hover:border-[#d8b4fe]'
-                          }`}
-                        >
-                          <p className={`text-xs font-semibold uppercase tracking-[0.24em] ${isActive ? 'text-[#d3b8ff]' : 'text-slate-500'}`}>
-                            {course.kind || 'CATALOG'}
-                          </p>
-                          <p className="mt-3 text-xl font-semibold">{course.title}</p>
-                          <p className={`mt-2 text-sm leading-6 ${isActive ? 'text-slate-200' : 'text-slate-600'}`}>
-                            {course.description || 'Load plans for this exam track.'}
-                          </p>
-                        </button>
-                      )
-                    })}
-
-                    {customCourseOption && (
-                      <button
-                        type="button"
-                        onClick={() => setSelectedCourseChoice(customCourseOption.key)}
-                        className={`rounded-[1.75rem] border px-5 py-5 text-left transition ${
-                          isCustomCourseSelected
-                            ? 'border-[#6b21a8] bg-[#6b21a8] text-white shadow-[0_18px_40px_rgba(107,33,168,0.25)]'
-                            : 'border-slate-200 bg-[#f9f9fb] text-slate-900 hover:border-[#d8b4fe]'
-                        }`}
-                      >
-                        <p className={`text-xs font-semibold uppercase tracking-[0.24em] ${isCustomCourseSelected ? 'text-[#d3b8ff]' : 'text-slate-500'}`}>
-                          Custom
-                        </p>
-                        <p className="mt-3 text-xl font-semibold">{customCourseOption.title}</p>
-                        <p className={`mt-2 text-sm leading-6 ${isCustomCourseSelected ? 'text-slate-200' : 'text-slate-600'}`}>
-                          Create a private exam track for checkout if your course is not listed.
-                        </p>
-                      </button>
-                    )}
-                  </div>
-
-                  {isCustomCourseSelected && (
-                    <div className="max-w-xl">
-                      <label htmlFor="customCourseTitle" className="mb-2 block text-sm font-medium text-slate-700">
-                        Exam name
-                      </label>
-                      <input
-                        id="customCourseTitle"
-                        type="text"
-                        placeholder="For example, AFCAT"
-                        value={customCourseTitle}
-                        onChange={(event) => setCustomCourseTitle(event.target.value)}
-                        className="block w-full rounded-2xl border border-slate-200 bg-[#f9f9fb] px-4 py-4 text-base text-slate-900 placeholder:text-slate-400 focus:border-[#a78bfa] focus:ring-0"
-                        disabled={courseLoading}
-                      />
-                    </div>
-                  )}
-
-                  {courseError && (
-                    <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                      {courseError}
-                    </div>
-                  )}
-
-                  <div className="flex flex-col gap-3 sm:flex-row">
-                    <button
-                      type="button"
-                      onClick={handleSaveCourseSelection}
-                      disabled={courseLoading}
-                      className="inline-flex items-center justify-center rounded-full bg-black px-6 py-3 text-sm font-medium text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {courseLoading ? 'Saving course...' : 'Continue to plans'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        tokenStore.clear()
-                        openOtpScreen('Sign in again to choose a different account.')
-                      }}
-                      className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-6 py-3 text-sm font-medium text-slate-900 transition hover:border-[#a78bfa]"
-                    >
-                      Use another account
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {(screen === 'ready' || screen === 'processing' || screen === 'pending' || screen === 'success' || screen === 'failed' || screen === 'error') && (
-                <div className="space-y-6">
-                  {groupedPlans.length > 0 && (
-                    <div>
-                      <div className="flex items-center justify-between gap-4">
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[#6b21a8]">Plans</p>
-                          <h2 className="mt-2 text-2xl font-semibold text-slate-950">Choose your access plan</h2>
-                        </div>
-                        <div className="rounded-full border border-[#e9d5ff] bg-[#faf5ff] px-4 py-2 text-xs font-medium text-[#6b21a8]">
-                          Backend verified
-                        </div>
-                      </div>
-
-                      <div className="mt-6 space-y-5">
-                        {groupedPlans.map((group) => (
-                          <div key={group.course.courseId}>
-                            <div className="mb-3">
-                              <h3 className="text-lg font-semibold text-slate-900">{group.course.title}</h3>
-                              {group.course.description && (
-                                <p className="mt-1 text-sm text-slate-500">{group.course.description}</p>
-                              )}
-                            </div>
-
-                            <div className="grid gap-3 sm:grid-cols-2">
-                              {group.plans.map((plan) => {
-                                const isActive = selectedPlanId === plan.planId
-
-                                return (
-                                  <button
-                                    key={plan.planId}
-                                    type="button"
-                                    onClick={() => setSelectedPlanId(plan.planId)}
-                                    className={`rounded-[1.75rem] border px-5 py-5 text-left transition ${
-                                      isActive
-                                        ? 'border-[#6b21a8] bg-[#6b21a8] text-white shadow-[0_18px_40px_rgba(107,33,168,0.25)]'
-                                        : 'border-slate-200 bg-[#f9f9fb] text-slate-900 hover:border-[#d8b4fe]'
-                                    }`}
-                                  >
-                                    <div className="flex items-start justify-between gap-3">
-                                      <div>
-                                        <p className={`text-xs font-semibold uppercase tracking-[0.24em] ${isActive ? 'text-[#d3b8ff]' : 'text-slate-500'}`}>
-                                          {plan.code}
-                                        </p>
-                                        <p className="mt-3 text-2xl font-semibold">{plan.name}</p>
-                                      </div>
-                                      <div className={`rounded-full px-3 py-1 text-xs font-medium ${isActive ? 'bg-white/10 text-white' : 'bg-white text-slate-600'}`}>
-                                        {plan.durationMonths} month{plan.durationMonths > 1 ? 's' : ''}
-                                      </div>
-                                    </div>
-                                    <p className={`mt-5 text-lg font-semibold ${isActive ? 'text-white' : 'text-slate-900'}`}>
-                                      {formatCurrency(plan.amountPaise, plan.currency)}
-                                    </p>
-                                    <p className={`mt-2 text-sm leading-6 ${isActive ? 'text-slate-200' : 'text-slate-600'}`}>
-                                      {plan.description || 'Instant access after payment verification.'}
-                                    </p>
-                                  </button>
-                                )
-                              })}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {pageError && (
-                    <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                      {pageError}
-                    </div>
-                  )}
-
-                  {screen === 'error' && pageError && (
-                    <div className="flex flex-wrap gap-3">
-                      <button
-                        type="button"
-                        onClick={() => void bootstrap()}
-                        className="inline-flex items-center justify-center rounded-full bg-slate-950 px-6 py-3 text-sm font-medium text-white transition hover:bg-slate-800"
-                      >
-                        Retry
-                      </button>
-                      <a
-                        href="/payment/error?code=HANDOFF_INVALID"
-                        className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-6 py-3 text-sm font-medium text-slate-900 transition hover:border-slate-400"
-                      >
-                        Open help
-                      </a>
-                    </div>
-                  )}
-                </div>
-              )}
-            </section>
-
-            <aside className="rounded-[2rem] border border-[#2f2047] bg-[#0e0e0e] p-6 text-white shadow-[0_24px_80px_rgba(15,23,42,0.18)] sm:p-8">
-              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[#d3b8ff]">Summary</p>
-
-              {selectedPlan ? (
-                <>
-                  <div className="mt-5 rounded-[1.75rem] border border-white/10 bg-gradient-to-br from-white/10 to-white/5 p-5">
-                    <p className="text-sm text-slate-300">{selectedPlan.course.title}</p>
-                    <h3 className="mt-2 text-2xl font-semibold text-white">{selectedPlan.name}</h3>
-                    <p className="mt-3 text-3xl font-semibold">{formatCurrency(selectedPlan.amountPaise, selectedPlan.currency)}</p>
-                    <p className="mt-3 text-sm leading-6 text-slate-300">
-                      {selectedPlan.description || `Access for ${selectedPlan.durationMonths} month${selectedPlan.durationMonths > 1 ? 's' : ''}.`}
-                    </p>
-                  </div>
-
-                  <div className="mt-6 rounded-[1.75rem] border border-white/10 bg-white/5 p-5">
-                    <ul className="space-y-3 text-sm text-slate-300">
-                      <li>Razorpay Checkout opens directly from this page.</li>
-                      <li>Access is granted only after backend verification succeeds.</li>
-                      <li>Webhooks reconcile missed callbacks in the background.</li>
-                    </ul>
-                  </div>
-
+              <div className="relative z-10">
+                <div className="flex items-center justify-between gap-3">
                   <button
                     type="button"
-                    onClick={handlePayNow}
-                    disabled={screen !== 'ready' || checkoutLoading}
-                    className="mt-6 inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-4 text-base font-semibold text-[#6b21a8] transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={handleBack}
+                    className="inline-flex items-center gap-2 rounded-full bg-white/12 px-3 py-2 text-xs font-medium text-white backdrop-blur transition hover:bg-white/18"
                   >
-                    {checkoutLoading ? 'Preparing checkout...' : 'Pay now'}
+                    <ChevronLeftIcon className="h-3.5 w-3.5" />
+                    Back
                   </button>
 
-                  {!razorpayReady && (
-                    <p className="mt-3 text-xs text-[#d3b8ff]">Secure checkout script is still loading.</p>
-                  )}
-                </>
-              ) : selectedCoursePreview ? (
-                <>
-                  <div className="mt-5 rounded-[1.75rem] border border-white/10 bg-gradient-to-br from-white/10 to-white/5 p-5">
-                    <p className="text-sm text-slate-300">Selected course</p>
-                    <h3 className="mt-2 text-2xl font-semibold text-white">{selectedCoursePreview.title}</h3>
-                    <p className="mt-3 text-sm leading-6 text-slate-300">
-                      {selectedCoursePreview.description || 'Save this course choice to load the available plans.'}
-                    </p>
+                  <div className="rounded-full bg-white/14 px-3 py-2 text-[11px] font-semibold tracking-[0.18em] text-white/90 backdrop-blur">
+                    {selectedCoursePreview?.title || activeGroup?.course.title || 'Virtual Library'}
                   </div>
-
-                  <div className="mt-6 rounded-[1.75rem] border border-white/10 bg-white/5 p-5">
-                    <ul className="space-y-3 text-sm text-slate-300">
-                      <li>Course selection decides which billing plans are available.</li>
-                      <li>If your exam is not listed, use the custom option to create one.</li>
-                      <li>Once saved, this page will reload the correct checkout plans.</li>
-                    </ul>
-                  </div>
-                </>
-              ) : (
-                <div className="mt-5 rounded-[1.75rem] border border-white/10 bg-white/5 p-5 text-sm text-slate-300">
-                  {screen === 'course' ? 'Choose a course to unlock the right plans.' : 'Select a plan to continue.'}
                 </div>
-              )}
 
-              {result && (
-                <div
-                  className={`mt-6 rounded-[1.75rem] border p-5 ${
-                    statusTone === 'success'
-                      ? 'border-emerald-400/30 bg-emerald-400/10'
-                      : statusTone === 'warning'
-                        ? 'border-amber-300/30 bg-amber-300/10'
-                        : 'border-rose-400/30 bg-rose-400/10'
-                  }`}
-                >
-                  <h4 className="text-lg font-semibold text-white">{result.title}</h4>
-                  <p className="mt-2 text-sm leading-6 text-slate-200">{result.message}</p>
+                <div className="mt-4 flex items-center justify-between gap-3 text-[11px] text-white/85">
+                  <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-0.5 text-[#fcd34d]">
+                      {[0, 1, 2, 3, 4].map((star) => (
+                        <StarIcon key={star} className="h-3 w-3 fill-current" />
+                      ))}
+                    </div>
+                    <span className="font-medium">4.9 rated checkout</span>
+                  </div>
+                  <div className="rounded-full bg-emerald-400/15 px-3 py-1 font-medium text-emerald-100">
+                    {statusNote}
+                  </div>
+                </div>
 
-                  {result.returnUrl && (
-                    <button
-                      type="button"
-                      onClick={() => handleReturnToApp(screen === 'pending' ? 'pending' : screen === 'success' ? 'success' : 'failed')}
-                      className="mt-4 inline-flex items-center justify-center rounded-full border border-white/20 bg-white/10 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-white/15"
+                <h1 className="mt-5 max-w-[13ch] text-[2rem] font-extrabold leading-[1.04] tracking-[-0.04em] text-white">
+                  {heroTitle}
+                </h1>
+
+                <p className="mt-3 max-w-[30ch] text-sm leading-6 text-white/78">
+                  {heroDescription}
+                </p>
+
+                <div className="mt-4 flex items-center gap-3">
+                  <div className="flex -space-x-2">
+                    {['A', 'S', 'D'].map((letter, index) => (
+                      <div
+                        key={letter}
+                        className={cn(
+                          'flex h-8 w-8 items-center justify-center rounded-full border-2 border-[#7c3aed] text-xs font-bold text-white',
+                          index === 0 && 'bg-[#f97316]',
+                          index === 1 && 'bg-[#3b82f6]',
+                          index === 2 && 'bg-[#ef4444]'
+                        )}
+                      >
+                        {letter}
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs font-medium text-white/82">Built for aspirants who need structure, focus, and support.</p>
+                </div>
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {HERO_PILLS.map((pill) => (
+                    <span
+                      key={pill}
+                      className="rounded-full border border-white/12 bg-white/12 px-3 py-1.5 text-[11px] font-medium text-white/90 backdrop-blur"
                     >
-                      Return to app
-                    </button>
-                  )}
-                </div>
-              )}
-
-              <div className="mt-6 space-y-3 text-xs leading-5 text-slate-400">
-                <p>Need help? Reopen checkout from the app if the handoff expired, or contact support.</p>
-                <div className="flex flex-wrap gap-3">
-                  <a href="/terms-and-conditions" className="hover:text-white">
-                    Terms
-                  </a>
-                  <a href="/privacy-policy" className="hover:text-white">
-                    Privacy
-                  </a>
-                  <a href="/refund-policy" className="hover:text-white">
-                    Refunds
-                  </a>
+                      {pill}
+                    </span>
+                  ))}
                 </div>
               </div>
-            </aside>
+            </div>
+
+            <div className="bg-[#fcfbff] px-4 pb-4 pt-4">
+              {renderBodyContent()}
+            </div>
+
+            {renderFooterAction()}
+          </div>
+
+          <div className="mt-4 flex flex-wrap justify-center gap-4 text-[11px] font-medium text-slate-500">
+            <a href="/terms-and-conditions" className="transition hover:text-[#6d28d9]">
+              Terms
+            </a>
+            <a href="/privacy-policy" className="transition hover:text-[#6d28d9]">
+              Privacy
+            </a>
+            <a href="/refund-policy" className="transition hover:text-[#6d28d9]">
+              Refunds
+            </a>
           </div>
         </div>
       </div>
+
+      <SuccessCompletionModal
+        isOpen={showSuccessModal && screen === 'success'}
+        message={result?.message}
+        onClose={handleCloseSuccessModal}
+      />
     </>
+  )
+}
+
+function PlanOptionCard({
+  active,
+  disabled,
+  metrics,
+  onSelect,
+  plan,
+  tag,
+}: {
+  active: boolean
+  disabled: boolean
+  metrics: PlanMetrics
+  onSelect: () => void
+  plan: BillingPlan
+  tag: string | null
+}) {
+  const note =
+    metrics.savingsPaise > 0
+      ? `You save ${formatCurrency(metrics.savingsPaise, plan.currency)} vs renewing the shortest plan`
+      : 'Start with the shortest commitment and upgrade later'
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      disabled={disabled}
+      className={cn(
+        'w-full rounded-[26px] border p-5 text-left transition',
+        active
+          ? 'border-[#d9c5ff] bg-white shadow-[0_14px_28px_rgba(124,58,237,0.08)]'
+          : 'border-[#eee6fb] bg-white hover:border-[#d9c5ff]',
+        disabled && 'cursor-not-allowed opacity-75'
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <SelectionDot active={active} />
+
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-base font-semibold text-slate-900">{formatPlanDuration(plan.durationMonths)}</p>
+              {tag && (
+                <span
+                  className={cn(
+                    'rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em]',
+                    tag === 'Most popular' ? 'bg-[#ffedd5] text-[#ea580c]' : 'bg-[#e7f9f3] text-[#0f766e]'
+                  )}
+                >
+                  {tag}
+                </span>
+              )}
+            </div>
+
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              {formatCurrency(metrics.monthlyPaise, plan.currency)} /mo billed as {formatCurrency(plan.amountPaise, plan.currency)}
+            </p>
+          </div>
+        </div>
+
+        <div className="shrink-0 text-right">
+          {metrics.compareAmountPaise && metrics.compareAmountPaise > plan.amountPaise && (
+            <p className="text-[11px] font-medium text-slate-400 line-through">
+              {formatCurrency(metrics.compareAmountPaise, plan.currency)}
+            </p>
+          )}
+          <p className="text-3xl font-extrabold tracking-[-0.04em] text-[#6d28d9]">
+            {formatCurrency(plan.amountPaise, plan.currency)}
+          </p>
+          <p className="mt-1 text-[11px] font-medium text-[#8b5cf6]">
+            {formatCurrency(metrics.dailyPaise, plan.currency)} /day
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4 flex items-center gap-2 border-t border-[#f2ebff] pt-4 text-xs text-slate-600">
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#f3edff] text-[#6d28d9]">
+          <CheckIcon className="h-3.5 w-3.5" />
+        </span>
+        <span>{note}</span>
+      </div>
+    </button>
   )
 }
 
 function LoadingPanel({ label }: { label: string }) {
   return (
-    <div className="flex min-h-[320px] flex-col items-center justify-center">
-      <div className="h-12 w-12 animate-spin rounded-full border-2 border-slate-300 border-t-slate-900" />
+    <div className="flex min-h-[260px] flex-col items-center justify-center">
+      <div className="h-12 w-12 animate-spin rounded-full border-2 border-[#d9cdf6] border-t-[#7c3aed]" />
       <p className="mt-5 text-sm font-medium text-slate-600">{label}</p>
     </div>
   )
+}
+
+function SectionHeading({
+  description,
+  eyebrow,
+  title,
+}: {
+  description: string
+  eyebrow: string
+  title: string
+}) {
+  return (
+    <div>
+      <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-[#8b5cf6]">{eyebrow}</p>
+      <h2 className="mt-2 text-[1.45rem] font-bold tracking-[-0.03em] text-slate-950">{title}</h2>
+      <p className="mt-2 text-sm leading-6 text-slate-500">{description}</p>
+    </div>
+  )
+}
+
+function InputField({
+  disabled,
+  hint,
+  inputMode,
+  label,
+  onChange,
+  placeholder,
+  value,
+}: {
+  disabled?: boolean
+  hint?: string
+  inputMode?: React.HTMLAttributes<HTMLInputElement>['inputMode']
+  label: string
+  onChange: (value: string) => void
+  placeholder: string
+  value: string
+}) {
+  return (
+    <label className="block">
+      <span className="mb-2 block text-sm font-medium text-slate-700">{label}</span>
+      <div className="flex items-center rounded-[18px] border border-[#e6def7] bg-white px-4 shadow-[0_10px_20px_rgba(90,24,154,0.04)]">
+        {hint && <span className="mr-3 text-sm font-semibold text-slate-400">{hint}</span>}
+        <input
+          type="text"
+          inputMode={inputMode}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={placeholder}
+          disabled={disabled}
+          className="w-full border-0 bg-transparent px-0 py-4 text-sm text-slate-900 placeholder:text-slate-400 focus:ring-0"
+        />
+      </div>
+    </label>
+  )
+}
+
+function MessageBanner({
+  children,
+  tone,
+}: {
+  children: React.ReactNode
+  tone: 'danger' | 'success' | 'warning'
+}) {
+  return (
+    <div
+      className={cn(
+        'rounded-[18px] border px-4 py-3 text-sm',
+        tone === 'danger' && 'border-rose-200 bg-rose-50 text-rose-700',
+        tone === 'success' && 'border-emerald-200 bg-emerald-50 text-emerald-700',
+        tone === 'warning' && 'border-amber-200 bg-amber-50 text-amber-700'
+      )}
+    >
+      {children}
+    </div>
+  )
+}
+
+function SelectionDot({ active }: { active: boolean }) {
+  return (
+    <span
+      className={cn(
+        'mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition',
+        active ? 'border-[#7c3aed] bg-[#7c3aed]' : 'border-[#cbb7f7] bg-white'
+      )}
+    >
+      <span className={cn('h-2 w-2 rounded-full bg-white', !active && 'opacity-0')} />
+    </span>
+  )
+}
+
+function ChevronLeftIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}>
+      <path d="M12.5 4.5L7 10l5.5 5.5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+    </svg>
+  )
+}
+
+function ArrowRightIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}>
+      <path d="M4.5 10h11" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+      <path d="M11 5.5L15.5 10 11 14.5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+    </svg>
+  )
+}
+
+function CheckIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}>
+      <path d="M5 10.5l3.2 3.2L15 7" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+    </svg>
+  )
+}
+
+function StarIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true" className={className}>
+      <path d="M10 2.4l2.3 4.7 5.2.8-3.8 3.8.9 5.3L10 14.6 5.4 17l.9-5.3L2.5 7.9l5.2-.8L10 2.4z" />
+    </svg>
+  )
+}
+
+function SuccessCompletionModal({
+  isOpen,
+  message,
+  onClose,
+}: {
+  isOpen: boolean
+  message?: string
+  onClose: () => void
+}) {
+  useEffect(() => {
+    if (!isOpen) {
+      return
+    }
+
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [isOpen])
+
+  if (!isOpen) {
+    return null
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[rgba(17,24,39,0.42)] p-4 backdrop-blur-sm">
+      <div className="w-full max-w-sm rounded-[32px] bg-white p-6 text-center shadow-[0_34px_80px_rgba(76,29,149,0.24)]">
+        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[#f3edff] text-[#6d28d9]">
+          <CheckIcon className="h-7 w-7" />
+        </div>
+
+        <p className="mt-5 text-[11px] font-semibold uppercase tracking-[0.28em] text-[#8b5cf6]">
+          Payment Completed
+        </p>
+        <h2 className="mt-2 text-2xl font-bold tracking-[-0.04em] text-slate-950">
+          Your payment was successful
+        </h2>
+        <p className="mt-3 text-sm leading-6 text-slate-500">
+          {message || 'Payment confirmed successfully.'}
+        </p>
+        <p className="mt-2 text-sm leading-6 text-slate-500">
+          Close this modal to get access to our latest features.
+        </p>
+
+        <button
+          type="button"
+          onClick={onClose}
+          className="mt-6 w-full rounded-[18px] bg-[#7c3aed] px-4 py-3.5 text-sm font-semibold text-white shadow-[0_18px_34px_rgba(124,58,237,0.24)] transition hover:bg-[#6d28d9]"
+        >
+          Close and continue
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function getPlanMetrics(plan: BillingPlan, basePlan: BillingPlan | null): PlanMetrics {
+  const safeDuration = Math.max(plan.durationMonths, 1)
+  const monthlyPaise = Math.round(plan.amountPaise / safeDuration)
+  const dailyPaise = Math.max(1, Math.round(plan.amountPaise / (safeDuration * 30)))
+
+  if (!basePlan) {
+    return {
+      monthlyPaise,
+      dailyPaise,
+      compareAmountPaise: null,
+      savingsPaise: 0,
+      savePercent: 0,
+    }
+  }
+
+  const baseMonthlyPaise = Math.round(basePlan.amountPaise / Math.max(basePlan.durationMonths, 1))
+  const compareAmountPaise = baseMonthlyPaise * safeDuration
+  const savingsPaise = Math.max(0, compareAmountPaise - plan.amountPaise)
+  const savePercent = compareAmountPaise > 0 ? Math.round((savingsPaise / compareAmountPaise) * 100) : 0
+
+  return {
+    monthlyPaise,
+    dailyPaise,
+    compareAmountPaise: compareAmountPaise > plan.amountPaise ? compareAmountPaise : null,
+    savingsPaise,
+    savePercent,
+  }
+}
+
+function getPlanTag(plan: BillingPlan, metrics: PlanMetrics, popularPlanId: string) {
+  if (plan.planId === popularPlanId) {
+    return 'Most popular'
+  }
+
+  if (metrics.savePercent > 0) {
+    return `Save ${metrics.savePercent}%`
+  }
+
+  return null
+}
+
+function formatPlanDuration(durationMonths: number) {
+  return `${durationMonths} ${durationMonths === 1 ? 'Month' : 'Months'}`
 }
 
 function getQueryParam(value: string | string[] | undefined) {
@@ -1094,4 +1693,8 @@ function getErrorMessage(error: unknown, fallback: string) {
   }
 
   return fallback
+}
+
+function cn(...classes: Array<string | false | null | undefined>) {
+  return classes.filter(Boolean).join(' ')
 }
