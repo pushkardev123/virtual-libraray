@@ -99,7 +99,7 @@ export class PaymentApiError extends Error {
   }
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_PAYMENT_PROXY_BASE || '/api/backend'
+const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || '/api/backend'
 const ACCESS_TOKEN_KEY = 'vl_access_token'
 const REFRESH_TOKEN_KEY = 'vl_refresh_token'
 const OTP_REQUEST_PATH = process.env.NEXT_PUBLIC_AUTH_REQUEST_OTP_PATH || '/auth/login/otp/start'
