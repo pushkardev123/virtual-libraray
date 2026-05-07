@@ -8,6 +8,7 @@ export interface ICoupon extends Document {
   discountPercentage: number;
   expiryDate: Date;
   isActive: boolean;
+  showOnUI: boolean;
   usageCount: number;
   maxUsage?: number;
   createdAt: Date;
@@ -55,6 +56,11 @@ const CouponSchema = new Schema<ICoupon, ICouponModel>(
     isActive: {
       type: Boolean,
       default: true,
+      index: true,
+    },
+    showOnUI: {
+      type: Boolean,
+      default: false,
       index: true,
     },
     usageCount: {

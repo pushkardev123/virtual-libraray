@@ -35,6 +35,11 @@ const CouponSchema = new mongoose.Schema(
       default: true,
       index: true,
     },
+    showOnUI: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
     usageCount: {
       type: Number,
       default: 0,
@@ -60,6 +65,7 @@ const coupons = [
     discountPercentage: 30,
     expiryDate: new Date('2026-01-03T23:59:59.999Z'), // January 3, 2026
     isActive: true,
+    showOnUI: true,
     usageCount: 0,
     maxUsage: null, // unlimited
   },
@@ -68,6 +74,7 @@ const coupons = [
     discountPercentage: 15,
     expiryDate: new Date('2026-02-05T23:59:59.999Z'), // February 5, 2026
     isActive: true,
+    showOnUI: true,
     usageCount: 0,
     maxUsage: null, // unlimited
   },
@@ -76,6 +83,7 @@ const coupons = [
     discountPercentage: 20,
     expiryDate: new Date('2025-06-27T23:59:59.999Z'), // 6 months from now (June 27, 2025)
     isActive: true,
+    showOnUI: true,
     usageCount: 0,
     maxUsage: null, // unlimited
   },
@@ -84,6 +92,7 @@ const coupons = [
     discountPercentage: 10,
     expiryDate: new Date('2025-06-27T23:59:59.999Z'), // 6 months from now (June 27, 2025)
     isActive: true,
+    showOnUI: true,
     usageCount: 0,
     maxUsage: null, // unlimited
   },
@@ -92,6 +101,7 @@ const coupons = [
     discountPercentage: 99,
     expiryDate: new Date('2025-06-27T23:59:59.999Z'), // 6 months from now (June 27, 2025)
     isActive: true,
+    showOnUI: false,
     usageCount: 0,
     maxUsage: null, // unlimited
   },
