@@ -26,6 +26,35 @@ export type BillingPlansResponse = {
   message?: string
 }
 
+export type BillingPricing = {
+  baseAmountPaise: number
+  discountAmountPaise: number
+  finalAmountPaise: number
+  currency: string
+}
+
+export type BillingCoupon = {
+  couponId: string | null
+  code: string
+  name?: string | null
+  description?: string | null
+  discountType?: string
+  discountValue?: number
+  maxDiscountPaise?: number | null
+}
+
+export type BillingQuoteResponse = {
+  couponStatus: 'NONE' | 'APPLIED' | 'INVALID' | string
+  isValidCoupon: boolean
+  pricing: BillingPricing
+  coupon: BillingCoupon | null
+  code?: string
+  message?: string
+  plan?: BillingPlan
+  course?: CourseSummary
+  selectedCourse?: CourseSummary | null
+}
+
 export type CourseOptionsResponse = {
   courses: CourseSummary[]
   customCourseOption?: {
@@ -70,6 +99,8 @@ export type BillingOrderResponse = {
     title: string
     description: string | null
   }
+  pricing?: BillingPricing
+  coupon?: BillingCoupon | null
   user?: {
     name?: string
     email?: string
