@@ -28,9 +28,14 @@ import {
   tokenStore,
   verifyOtp,
 } from '@/lib/payment-client'
+import {
+  getPricingPlanMeta,
+  PricingPlanCard,
+} from '@/components/v2/PricingPlanCard'
 
 type ScreenState =
   | 'booting'
+  | 'planSelect'
   | 'otp'
   | 'course'
   | 'ready'
@@ -66,6 +71,18 @@ type BillingDetails = {
   email: string
 }
 
+type PaymentSessionUser = {
+  email?: string
+  name?: string
+  phoneE164?: string
+}
+
+type PaymentLinkCustomerPayload = {
+  email?: string
+  name?: string
+  phoneE164?: string
+}
+
 const EMPTY_BILLING_DETAILS: BillingDetails = {
   email: '',
 }
@@ -75,6 +92,7 @@ const CHECKOUT_CLAIM_TOKEN_KEY = 'checkoutClaimToken'
 const CHECKOUT_PHONE_KEY = 'checkoutPhoneE164'
 const CHECKOUT_EMAIL_KEY = 'checkoutEmail'
 const CHECKOUT_ACCOUNT_EXISTS_KEY = 'checkoutAccountExists'
+const CHECKOUT_SESSION_USER_KEY = 'checkoutSessionUser'
 const LEGACY_PAYMENT_ORDER_ID_KEY = 'lastPaymentOrderId'
 const GOOGLE_PLAY_HREF = 'https://play.google.com/store/apps/details?id=com.pushkardev123.VirtualLibrary'
 const APP_STORE_HREF = 'https://apps.apple.com/'
@@ -119,6 +137,7 @@ export default function PaymentPage() {
   const [courseLoading, setCourseLoading] = useState(false)
   const [courseError, setCourseError] = useState('')
   const [billingDetails, setBillingDetails] = useState<BillingDetails>(EMPTY_BILLING_DETAILS)
+  const [sessionUser, setSessionUser] = useState<PaymentSessionUser | null>(null)
   const [billingError, setBillingError] = useState('')
   const [paymentPhoneOtpRequired, setPaymentPhoneOtpRequired] = useState(false)
   const [paymentOrderId, setPaymentOrderId] = useState('')
@@ -137,9 +156,12 @@ export default function PaymentPage() {
   const planIdFromQuery = getQueryParam(router.query.planId)
   const paymentStatusFromQuery = getQueryParam(router.query.paymentStatus)
   const checkoutSource = getQueryParam(router.query.source)
-  const isPrimaryPaymentLinksFlow = Boolean(planIdFromQuery || paymentStatusFromQuery)
+  const checkoutMode = getQueryParam(router.query.mode)
+  const isLegacyCheckoutFlow = checkoutMode === 'legacy'
+  const isPrimaryPaymentLinksFlow = !isLegacyCheckoutFlow && Boolean(planIdFromQuery || paymentStatusFromQuery)
   const shouldUseV2WebFallback = checkoutSource === 'v2-neet-pg'
-  const shouldLoadCheckoutScript = router.isReady && !isPrimaryPaymentLinksFlow
+  const shouldLoadCheckoutScript = router.isReady && isLegacyCheckoutFlow
+  const isSessionPaymentLinkCheckout = isPrimaryPaymentLinksFlow && Boolean(sessionUser)
 
   const selectedPlan = useMemo(
     () => plans.find((plan) => plan.planId === selectedPlanId) || null,
@@ -319,6 +341,35 @@ export default function PaymentPage() {
     }
   }
 
+  function getPaymentLinkCustomerPayload(): PaymentLinkCustomerPayload | null {
+    if (sessionUser) {
+      return {}
+    }
+
+    return getGuestContactPayload()
+  }
+
+  async function loadSessionUser() {
+    try {
+      const response = await apiFetch<any>('/me', {
+        headers: {
+          Accept: 'application/json',
+        },
+      })
+      const user = extractSessionUser(response)
+
+      setSessionUser(user)
+      if (user) {
+        setAuthMode(tokenStore.getAccessToken() ? 'bearer' : 'cookie')
+      }
+
+      return user
+    } catch {
+      setSessionUser(null)
+      return null
+    }
+  }
+
   async function bootstrap() {
     setPageError('')
     setAuthError('')
@@ -329,6 +380,7 @@ export default function PaymentPage() {
     setPaymentOrderId('')
     setAccountSetupStep('profile')
     setAccountError('')
+    setSessionUser(null)
     setAuthMode(tokenStore.getAccessToken() ? 'bearer' : 'unknown')
 
     if (paymentStatusFromQuery) {
@@ -357,18 +409,71 @@ export default function PaymentPage() {
       return
     }
 
-    await loadPlans()
+    if (isLegacyCheckoutFlow) {
+      await loadPlans()
+      return
+    }
+
+    await loadPublicPlansForSelection()
+  }
+
+  async function loadPublicPlansForSelection() {
+    try {
+      setScreen('booting')
+      const [data, user] = await Promise.all([
+        apiFetch<PublicBillingPlansResponse>('/billing/plans/public', {
+          skipAuth: true,
+          headers: {
+            Accept: 'application/json',
+          },
+        }),
+        loadSessionUser(),
+      ])
+      const availablePlans = [...(data.plans || [])].sort((left, right) => {
+        if ((left.course.displayOrder || 0) !== (right.course.displayOrder || 0)) {
+          return (left.course.displayOrder || 0) - (right.course.displayOrder || 0)
+        }
+
+        if (left.durationMonths !== right.durationMonths) {
+          return left.durationMonths - right.durationMonths
+        }
+
+        return left.amountPaise - right.amountPaise
+      })
+
+      if (!availablePlans.length) {
+        setPlans([])
+        setSelectedPlanId('')
+        setSelectedCourse(data.course || null)
+        setScreen('error')
+        setPageError(data.message || 'No plans are available right now. Please try again shortly.')
+        return
+      }
+
+      setPlans(availablePlans)
+      setSelectedCourse(data.course || availablePlans[0]?.course || null)
+      setSelectedPlanId(getDefaultPlanId(availablePlans))
+      setAuthMode(user ? (tokenStore.getAccessToken() ? 'bearer' : 'cookie') : 'unauthenticated')
+      setScreen('planSelect')
+      setStatusNote('Choose a plan to continue to payment.')
+    } catch (error) {
+      setScreen('error')
+      setPageError(getErrorMessage(error, 'Unable to load plans. Please try again.'))
+    }
   }
 
   async function loadPublicPlanForPayment(requestedPlanId: string) {
     try {
       setScreen('booting')
-      const data = await apiFetch<PublicBillingPlansResponse>('/billing/plans/public', {
-        skipAuth: true,
-        headers: {
-          Accept: 'application/json',
-        },
-      })
+      const [data, user] = await Promise.all([
+        apiFetch<PublicBillingPlansResponse>('/billing/plans/public', {
+          skipAuth: true,
+          headers: {
+            Accept: 'application/json',
+          },
+        }),
+        loadSessionUser(),
+      ])
       const availablePlans = [...(data.plans || [])].sort((left, right) => {
         if (left.durationMonths !== right.durationMonths) {
           return left.durationMonths - right.durationMonths
@@ -390,9 +495,9 @@ export default function PaymentPage() {
       setPlans(availablePlans)
       setSelectedCourse(data.course || matchingPlan.course)
       setSelectedPlanId(matchingPlan.planId)
-      setAuthMode(tokenStore.getAccessToken() ? 'bearer' : 'unauthenticated')
+      setAuthMode(user ? (tokenStore.getAccessToken() ? 'bearer' : 'cookie') : 'unauthenticated')
       setScreen('ready')
-      setStatusNote('Enter contact details to create your Razorpay payment link.')
+      setStatusNote(user ? 'Review your plan and apply a coupon if you have one.' : 'Enter contact details to create your Razorpay payment link.')
     } catch (error) {
       setScreen('error')
       setPageError(getErrorMessage(error, 'Unable to load selected plan. Please try again.'))
@@ -649,9 +754,9 @@ export default function PaymentPage() {
       return
     }
 
-    const guestContact = isPrimaryPaymentLinksFlow ? getGuestContactPayload() : null
+    const customerPayload = isPrimaryPaymentLinksFlow ? getPaymentLinkCustomerPayload() : null
 
-    if (isPrimaryPaymentLinksFlow && !guestContact) {
+    if (isPrimaryPaymentLinksFlow && !customerPayload) {
       return
     }
 
@@ -669,10 +774,10 @@ export default function PaymentPage() {
       const quoteEndpoint = isPrimaryPaymentLinksFlow ? '/billing/guest/payment-links/quote' : '/billing/quote'
       const quote = await apiFetch<BillingQuoteResponse>(quoteEndpoint, {
         method: 'POST',
-        skipAuth: isPrimaryPaymentLinksFlow,
+        skipAuth: isPrimaryPaymentLinksFlow && !sessionUser,
         body: JSON.stringify({
           planId: requestPlanId,
-          ...(guestContact || {}),
+          ...(customerPayload || {}),
           couponCode: nextCouponCode,
         }),
       })
@@ -722,15 +827,15 @@ export default function PaymentPage() {
       return
     }
 
+    if (isPrimaryPaymentLinksFlow) {
+      await createPaymentLink()
+      return
+    }
+
     const validationError = validateBillingDetails(billingDetails, phone)
 
     if (validationError) {
       setBillingError(validationError)
-      return
-    }
-
-    if (isPrimaryPaymentLinksFlow) {
-      await createPaymentLink()
       return
     }
 
@@ -779,9 +884,9 @@ export default function PaymentPage() {
       return
     }
 
-    const guestContact = getGuestContactPayload()
+    const customerPayload = getPaymentLinkCustomerPayload()
 
-    if (!guestContact) {
+    if (!customerPayload) {
       return
     }
 
@@ -796,10 +901,10 @@ export default function PaymentPage() {
     try {
       const created = await apiFetch<PaymentLinkCreateResponse>('/billing/guest/payment-links', {
         method: 'POST',
-        skipAuth: true,
+        skipAuth: !sessionUser,
         body: JSON.stringify({
           planId: selectedPlan.planId,
-          ...guestContact,
+          ...customerPayload,
           couponCode: getCouponCodeForSubmit(couponCode),
         }),
       })
@@ -820,9 +925,13 @@ export default function PaymentPage() {
       if (typeof window !== 'undefined') {
         window.sessionStorage.setItem(CHECKOUT_PAYMENT_ORDER_ID_KEY, created.order.id)
         window.sessionStorage.setItem(CHECKOUT_CLAIM_TOKEN_KEY, created.checkout.claimToken)
-        window.sessionStorage.setItem(CHECKOUT_PHONE_KEY, guestContact.phoneE164)
-        window.sessionStorage.setItem(CHECKOUT_EMAIL_KEY, guestContact.email)
-        window.sessionStorage.setItem(CHECKOUT_ACCOUNT_EXISTS_KEY, created.customer?.accountExists ? '1' : '0')
+        window.sessionStorage.setItem(CHECKOUT_PHONE_KEY, sessionUser?.phoneE164 || customerPayload.phoneE164 || '')
+        window.sessionStorage.setItem(CHECKOUT_EMAIL_KEY, sessionUser?.email || customerPayload.email || '')
+        window.sessionStorage.setItem(
+          CHECKOUT_ACCOUNT_EXISTS_KEY,
+          Boolean(created.customer?.accountExists || sessionUser) ? '1' : '0'
+        )
+        window.sessionStorage.setItem(CHECKOUT_SESSION_USER_KEY, sessionUser ? '1' : '0')
       }
 
       postMobileEvent('OPEN_PAYMENT_LINK', {
@@ -1096,9 +1205,10 @@ export default function PaymentPage() {
 
   async function handlePaymentLinkResult(paymentStatus: string) {
     const normalizedStatus = paymentStatus.toLowerCase()
+    const storedCheckoutSession = getStoredCheckoutSession()
     const orderIdFromQuery = getQueryParam(router.query.orderId)
     const storedOrderId = typeof window !== 'undefined'
-      ? getStoredCheckoutSession().orderId || window.sessionStorage.getItem(LEGACY_PAYMENT_ORDER_ID_KEY) || ''
+      ? storedCheckoutSession.orderId || window.sessionStorage.getItem(LEGACY_PAYMENT_ORDER_ID_KEY) || ''
       : ''
     const nextPaymentOrderId = orderIdFromQuery || storedOrderId
 
@@ -1106,7 +1216,7 @@ export default function PaymentPage() {
     setCheckoutLoading(false)
     setStatusTimedOut(false)
 
-    if (getStoredCheckoutSession().claimToken && (normalizedStatus === 'success' || normalizedStatus === 'captured')) {
+    if (storedCheckoutSession.claimToken && !storedCheckoutSession.sessionUser && (normalizedStatus === 'success' || normalizedStatus === 'captured')) {
       setScreen('pending')
       setResult({
         title: 'Checking payment',
@@ -1133,6 +1243,9 @@ export default function PaymentPage() {
         apiFetch('/me/courses'),
         apiFetch('/me'),
       ])
+      if (storedCheckoutSession.sessionUser) {
+        clearStoredCheckoutSession()
+      }
 
       setScreen('success')
       setShowSuccessModal(true)
@@ -1215,6 +1328,7 @@ export default function PaymentPage() {
     }
 
     try {
+      const storedCheckoutSession = getStoredCheckoutSession()
       const claimToken = getCheckoutClaimToken()
       if (isPrimaryPaymentLinksFlow && !claimToken) {
         setScreen('error')
@@ -1266,6 +1380,9 @@ export default function PaymentPage() {
           apiFetch('/me/courses'),
           apiFetch('/me'),
         ])
+        if (storedCheckoutSession.sessionUser) {
+          clearStoredCheckoutSession()
+        }
 
         setScreen('success')
         setShowSuccessModal(true)
@@ -1333,6 +1450,7 @@ export default function PaymentPage() {
         phoneE164: '',
         email: '',
         accountExists: false,
+        sessionUser: false,
       }
     }
 
@@ -1342,7 +1460,21 @@ export default function PaymentPage() {
       phoneE164: window.sessionStorage.getItem(CHECKOUT_PHONE_KEY) || '',
       email: window.sessionStorage.getItem(CHECKOUT_EMAIL_KEY) || '',
       accountExists: window.sessionStorage.getItem(CHECKOUT_ACCOUNT_EXISTS_KEY) === '1',
+      sessionUser: window.sessionStorage.getItem(CHECKOUT_SESSION_USER_KEY) === '1',
     }
+  }
+
+  function clearStoredCheckoutSession() {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    window.sessionStorage.removeItem(CHECKOUT_PAYMENT_ORDER_ID_KEY)
+    window.sessionStorage.removeItem(CHECKOUT_CLAIM_TOKEN_KEY)
+    window.sessionStorage.removeItem(CHECKOUT_PHONE_KEY)
+    window.sessionStorage.removeItem(CHECKOUT_EMAIL_KEY)
+    window.sessionStorage.removeItem(CHECKOUT_ACCOUNT_EXISTS_KEY)
+    window.sessionStorage.removeItem(CHECKOUT_SESSION_USER_KEY)
   }
 
   async function openAccountSetup(orderId: string) {
@@ -1473,13 +1605,7 @@ export default function PaymentPage() {
         throw new Error('Account setup completed, but the backend did not return an access token.')
       }
 
-      if (typeof window !== 'undefined') {
-        window.sessionStorage.removeItem(CHECKOUT_PAYMENT_ORDER_ID_KEY)
-        window.sessionStorage.removeItem(CHECKOUT_CLAIM_TOKEN_KEY)
-        window.sessionStorage.removeItem(CHECKOUT_PHONE_KEY)
-        window.sessionStorage.removeItem(CHECKOUT_EMAIL_KEY)
-        window.sessionStorage.removeItem(CHECKOUT_ACCOUNT_EXISTS_KEY)
-      }
+      clearStoredCheckoutSession()
 
       await Promise.allSettled([
         apiFetch('/me'),
@@ -1591,9 +1717,20 @@ export default function PaymentPage() {
     setSelectedPlanId(getDefaultPlanId(nextGroup.plans))
   }
 
+  async function handleSelectPublicPlan(plan: BillingPlan) {
+    setSelectedPlanId(plan.planId)
+    await router.push({
+      pathname: '/payment',
+      query: {
+        planId: plan.planId,
+      },
+    })
+  }
+
   function getCheckoutActionState(): CheckoutActionState | null {
     if (
       screen === 'booting' ||
+      screen === 'planSelect' ||
       screen === 'otp' ||
       screen === 'course' ||
       screen === 'accountSetup' ||
@@ -1682,6 +1819,17 @@ export default function PaymentPage() {
   function isPrimaryActionDisabled() {
     if (screen === 'otp') {
       return otpLoading || phone.trim().length < 10 || (otpRequested && otp.trim().length < 4)
+    }
+
+    if (isPrimaryPaymentLinksFlow && !sessionUser) {
+      return (
+        checkoutLoading ||
+        screen === 'processing' ||
+        screen === 'pending' ||
+        !selectedPlan ||
+        phone.trim().length < 10 ||
+        !billingDetails.email.trim()
+      )
     }
 
     return (
@@ -1830,8 +1978,43 @@ export default function PaymentPage() {
     )
   }
 
+  function renderPlanSelection() {
+    const displayPlans = activePlans.length ? activePlans : plans
+
+    return (
+      <section className="space-y-5">
+        <div className="rounded-3xl border border-purple-100 bg-white p-5 shadow-[0_18px_48px_rgba(107,33,168,0.08)] sm:p-6">
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-end">
+            <SectionHeading
+              eyebrow="Plans"
+              title="Choose your NEET-PG access"
+              description="Select a plan now. You can apply a coupon on the next step before opening Razorpay."
+            />
+
+            {sessionUser && <SessionCustomerCard user={sessionUser} />}
+          </div>
+        </div>
+
+        {pageError && <MessageBanner tone="danger">{pageError}</MessageBanner>}
+
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {displayPlans.map((plan, index) => (
+            <PricingPlanCard
+              key={plan.planId}
+              meta={getPricingPlanMeta(plan, displayPlans)}
+              onSelect={handleSelectPublicPlan}
+              plan={plan}
+              tilt={index % 2 === 0 ? 'left' : 'right'}
+            />
+          ))}
+        </div>
+      </section>
+    )
+  }
+
   function renderCheckoutForm() {
     const disabled = checkoutLoading || screen === 'processing' || screen === 'pending'
+    const showContactFields = !isSessionPaymentLinkCheckout
 
     return (
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
@@ -1845,7 +2028,7 @@ export default function PaymentPage() {
                 Checkout
               </p>
               <h1 className="mt-1 text-2xl font-semibold tracking-[-0.03em] text-slate-950">
-                Contact details
+                {showContactFields ? 'Contact details' : 'Payment details'}
               </h1>
             </div>
             <p className="rounded-full bg-purple-50 px-3 py-1.5 text-xs font-semibold text-[#6b21a8]">
@@ -1853,47 +2036,53 @@ export default function PaymentPage() {
             </p>
           </div>
 
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            <div className="sm:col-span-2">
-              <InputField
-                label="Mobile number"
-                hint="+91"
-                value={phone}
-                onChange={(value) => {
-                  setPhone(value.replace(/\D/g, '').slice(0, 10))
-                  setAuthError('')
-                  setBillingError('')
-                }}
-                inputMode="numeric"
-                disabled={otpLoading || disabled}
-              />
-            </div>
-
-            {((screen === 'otp' && otpRequested) || paymentPhoneOtpRequired) && (
+          {showContactFields ? (
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
               <div className="sm:col-span-2">
                 <InputField
-                  label="OTP"
-                  value={otp}
+                  label="Mobile number"
+                  hint="+91"
+                  value={phone}
                   onChange={(value) => {
-                    setOtp(value.replace(/\D/g, '').slice(0, 6))
+                    setPhone(value.replace(/\D/g, '').slice(0, 10))
                     setAuthError('')
+                    setBillingError('')
                   }}
                   inputMode="numeric"
-                  disabled={otpLoading || checkoutLoading}
+                  disabled={otpLoading || disabled}
                 />
               </div>
-            )}
 
-            <div className="sm:col-span-2">
-              <InputField
-                label="Email"
-                value={billingDetails.email}
-                onChange={(value) => updateBillingField('email', value)}
-                inputMode="email"
-                disabled={disabled}
-              />
+              {((screen === 'otp' && otpRequested) || paymentPhoneOtpRequired) && (
+                <div className="sm:col-span-2">
+                  <InputField
+                    label="OTP"
+                    value={otp}
+                    onChange={(value) => {
+                      setOtp(value.replace(/\D/g, '').slice(0, 6))
+                      setAuthError('')
+                    }}
+                    inputMode="numeric"
+                    disabled={otpLoading || checkoutLoading}
+                  />
+                </div>
+              )}
+
+              <div className="sm:col-span-2">
+                <InputField
+                  label="Email"
+                  value={billingDetails.email}
+                  onChange={(value) => updateBillingField('email', value)}
+                  inputMode="email"
+                  disabled={disabled}
+                />
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="mt-5">
+              <SessionCustomerCard user={sessionUser} />
+            </div>
+          )}
 
           {checkoutPricing && selectedPlan && (
             <div className="mt-6">
@@ -2068,6 +2257,10 @@ export default function PaymentPage() {
 
     if (screen === 'otp') {
       return renderCheckoutForm()
+    }
+
+    if (screen === 'planSelect') {
+      return renderPlanSelection()
     }
 
     if (screen === 'accountSetup') {
@@ -2496,6 +2689,21 @@ function DownloadOptions({
           <span className="mt-1 block text-sm font-bold leading-none">App Store</span>
         </span>
       </a>
+    </div>
+  )
+}
+
+function SessionCustomerCard({ user }: { user: PaymentSessionUser | null }) {
+  const phoneLabel = user?.phoneE164 ? maskPhone(user.phoneE164) : 'Signed in'
+  const emailLabel = user?.email ? maskEmail(user.email) : ''
+
+  return (
+    <div className="rounded-2xl border border-purple-100 bg-[#fbf9ff] px-4 py-3">
+      <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#6b21a8]">
+        Signed in
+      </p>
+      <p className="mt-1 text-sm font-semibold text-slate-900">{phoneLabel}</p>
+      {emailLabel && <p className="mt-0.5 text-xs font-medium text-slate-500">{emailLabel}</p>}
     </div>
   )
 }
@@ -2948,6 +3156,54 @@ function getPaymentErrorCode(error: unknown) {
   }
 
   return ''
+}
+
+function extractSessionUser(body: any): PaymentSessionUser | null {
+  const candidates = [
+    body?.user,
+    body?.data?.user,
+    body?.data?.profile,
+    body?.data,
+    body,
+  ].filter((candidate) => candidate && typeof candidate === 'object')
+
+  for (const candidate of candidates) {
+    const phoneE164 =
+      candidate.phoneE164 ||
+      candidate.mobileE164 ||
+      candidate.phone ||
+      candidate.mobile ||
+      candidate.phoneNumber ||
+      candidate.profile?.phoneE164 ||
+      ''
+    const email = candidate.email || candidate.profile?.email || ''
+    const name = candidate.name || candidate.fullName || candidate.profile?.name || ''
+
+    if (phoneE164 || email || name) {
+      return {
+        email: typeof email === 'string' ? email : undefined,
+        name: typeof name === 'string' ? name : undefined,
+        phoneE164: typeof phoneE164 === 'string' ? phoneE164 : undefined,
+      }
+    }
+  }
+
+  return null
+}
+
+function maskEmail(email: string) {
+  const [name, domain] = email.split('@')
+
+  if (!name || !domain) {
+    return email
+  }
+
+  const visible = name.slice(0, Math.min(2, name.length))
+  return `${visible}${name.length > 2 ? '***' : ''}@${domain}`
+}
+
+function maskPhone(phoneE164: string) {
+  return phoneE164.replace(/^(\+91)(\d{2})\d{4}(\d{4})$/, '$1 $2****$3')
 }
 
 function getAccountSetupErrorMessage(error: unknown, fallback: string) {
