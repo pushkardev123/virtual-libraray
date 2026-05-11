@@ -7,10 +7,7 @@ self.__BUILD_MANIFEST = {
   ],
   "ampDevFiles": [],
   "lowPriorityFiles": [],
-  "rootMainFiles": [
-    "static/chunks/webpack.js",
-    "static/chunks/main-app.js"
-  ],
+  "rootMainFiles": [],
   "pages": {
     "/_app": [
       "static/chunks/webpack.js",
@@ -22,15 +19,10 @@ self.__BUILD_MANIFEST = {
       "static/chunks/main.js",
       "static/chunks/pages/_error.js"
     ],
-    "/payment": [
+    "/v2/neet-pg": [
       "static/chunks/webpack.js",
       "static/chunks/main.js",
-      "static/chunks/pages/payment.js"
-    ],
-    "/v2/neet-pg/access": [
-      "static/chunks/webpack.js",
-      "static/chunks/main.js",
-      "static/chunks/pages/v2/neet-pg/access.js"
+      "static/chunks/pages/v2/neet-pg.js"
     ]
   },
   "ampFirstPages": []
