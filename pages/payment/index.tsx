@@ -242,7 +242,7 @@ export default function PaymentPage() {
     }
 
     void bootstrap()
-  }, [router.isReady])
+  }, [router.isReady, router.asPath])
 
   useEffect(() => {
     if (!activeGroup?.plans.length) {
@@ -1719,12 +1719,14 @@ export default function PaymentPage() {
 
   async function handleSelectPublicPlan(plan: BillingPlan) {
     setSelectedPlanId(plan.planId)
+    setScreen('booting')
+    setStatusNote('Loading selected plan...')
     await router.push({
       pathname: '/payment',
       query: {
         planId: plan.planId,
       },
-    })
+    }, undefined, { scroll: false })
   }
 
   function getCheckoutActionState(): CheckoutActionState | null {
