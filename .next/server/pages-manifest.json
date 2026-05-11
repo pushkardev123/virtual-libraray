@@ -1,8 +1,0 @@
-{
-  "/_app": "pages/_app.js",
-  "/_error": "pages/_error.js",
-  "/_document": "pages/_document.js",
-  "/v2/neet-pg": "pages/v2/neet-pg.js",
-  "/payment": "pages/payment.js",
-  "/v2/neet-pg/access": "pages/v2/neet-pg/access.js"
-}
