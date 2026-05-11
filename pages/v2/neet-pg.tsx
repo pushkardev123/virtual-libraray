@@ -353,7 +353,7 @@ export default function V2NeetPgPage() {
                     <p className="mb-4 inline-flex max-w-full rounded-full border border-white/20 bg-white/10 px-3 py-2 text-[10px] font-bold uppercase leading-none text-white/82 backdrop-blur sm:px-4 sm:text-xs">
                       Virtual Library for focused study
                     </p>
-                    <h1 className="max-w-[20rem] text-[2.15rem] font-black leading-[1.08] tracking-normal max-[380px]:text-[1.95rem] sm:max-w-[42rem] sm:text-[3.2rem] lg:text-[3rem]">
+                    <h1 className="max-w-[30rem] text-[2.15rem] font-bold leading-[1.08] tracking-normal max-[380px]:text-[1.95rem] sm:max-w-[42rem] sm:text-[3.2rem] lg:text-[3rem]">
                       {HERO_COPY.title}
                     </h1>
 
@@ -384,34 +384,35 @@ export default function V2NeetPgPage() {
                   </div>
                 </div>
 
-                <div className="relative z-20 bg-black px-4 py-3 text-white">
-                  <div className="mx-auto grid max-w-7xl grid-cols-2 gap-y-5 sm:grid-cols-4">
-                    {HERO_STATS.map((item, index) => (
-                      <div
-                        key={item.label}
-                        className={cn(
-                          'px-3 text-center sm:px-6',
-                          index !== 0 && 'sm:border-l sm:border-white/10'
-                        )}
-                      >
-                        <p
-                          className={cn(
-                            'text-3xl font-black leading-none tracking-normal sm:text-4xl',
-                            item.accent ? 'text-[#00d7a0]' : 'text-white'
-                          )}
-                        >
-                          {item.leadingDot && <span className="mr-1 text-[#00d7a0]">•</span>}
-                          {item.value}
-                          {item.suffix && <span className="text-[#00d7a0]">{item.suffix}</span>}
-                        </p>
-                        <p className="mt-2 text-xs font-semibold leading-5 text-[#d8d3eb] sm:text-sm">{item.label}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+
               </div>
             </div>
           </section>
+          <div className="relative z-20 bg-black px-4 py-3 text-white">
+            <div className="mx-auto grid max-w-7xl grid-cols-2 gap-y-5 sm:grid-cols-4">
+              {HERO_STATS.map((item, index) => (
+                <div
+                  key={item.label}
+                  className={cn(
+                    'px-3 text-center sm:px-6',
+                    index !== 0 && 'sm:border-l sm:border-white/10'
+                  )}
+                >
+                  <p
+                    className={cn(
+                      'text-3xl font-black leading-none tracking-normal sm:text-4xl',
+                      item.accent ? 'text-[#00d7a0]' : 'text-white'
+                    )}
+                  >
+                    {item.leadingDot && <span className="mr-1 text-[#00d7a0]">•</span>}
+                    {item.value}
+                    {item.suffix && <span className="text-[#00d7a0]">{item.suffix}</span>}
+                  </p>
+                  <p className="mt-2 text-xs font-semibold leading-5 text-[#d8d3eb] sm:text-sm">{item.label}</p>
+                </div>
+              ))}
+            </div>
+          </div>
 
           <section id="pricing" className="scroll-mt-24 bg-white py-16 sm:py-20">
             <div className="mx-auto max-w-7xl px-4 sm:px-6">
