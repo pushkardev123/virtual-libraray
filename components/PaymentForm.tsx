@@ -38,6 +38,17 @@ export default function PaymentForm({ examType }: PaymentFormProps = {}) {
   const [couponError, setCouponError] = useState('')
   const [applyingCoupon, setApplyingCoupon] = useState(false)
 
+  // Available coupons (publicly displayable)
+  type AvailableCoupon = {
+    code: string
+    discountPercentage: number
+    discountAmount: number
+    discountedAmount: number
+    expiryDate: string
+  }
+  const [availableCoupons, setAvailableCoupons] = useState<AvailableCoupon[]>([])
+  const [loadingAvailableCoupons, setLoadingAvailableCoupons] = useState(true)
+
   // Check if Razorpay script is already loaded (for cached scenarios)
   useEffect(() => {
     const checkRazorpayLoaded = () => {
@@ -68,6 +79,30 @@ export default function PaymentForm({ examType }: PaymentFormProps = {}) {
     }, 500)
 
     return () => clearInterval(intervalId)
+  }, [])
+
+  // Fetch publicly displayable coupons
+  useEffect(() => {
+    let cancelled = false
+
+    const fetchAvailableCoupons = async () => {
+      try {
+        const response = await fetch('/api/payment/available-coupons')
+        const data = await response.json()
+        if (!cancelled && response.ok && data?.data?.coupons) {
+          setAvailableCoupons(data.data.coupons)
+        }
+      } catch (error) {
+        console.error('Failed to fetch available coupons:', error)
+      } finally {
+        if (!cancelled) setLoadingAvailableCoupons(false)
+      }
+    }
+
+    fetchAvailableCoupons()
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   // Handle input changes
@@ -116,9 +151,12 @@ export default function PaymentForm({ examType }: PaymentFormProps = {}) {
     return isValid
   }
 
-  // Apply coupon code
-  const handleApplyCoupon = async () => {
-    if (!couponCode.trim()) {
+  // Apply coupon code (optionally pass an explicit code, e.g. from the
+  // available-coupons list, otherwise the manually-entered code is used)
+  const handleApplyCoupon = async (codeOverride?: string) => {
+    const codeToApply = (codeOverride ?? couponCode).trim()
+
+    if (!codeToApply) {
       setCouponError('Please enter a coupon code')
       return
     }
@@ -132,7 +170,7 @@ export default function PaymentForm({ examType }: PaymentFormProps = {}) {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ code: couponCode.trim() }),
+        body: JSON.stringify({ code: codeToApply }),
       })
 
       const data = await response.json()
@@ -147,6 +185,7 @@ export default function PaymentForm({ examType }: PaymentFormProps = {}) {
         discountAmount: data.data.discountAmount,
         discountedAmount: data.data.discountedAmount,
       })
+      setCouponCode(data.data.code)
       setCouponError('')
     } catch (error: any) {
       setCouponError(error.message || 'Failed to apply coupon')
@@ -416,12 +455,18 @@ export default function PaymentForm({ examType }: PaymentFormProps = {}) {
               <div className="flex items-center gap-2">
                 <span>🏷️</span>
                 <span className="text-gray-700 font-medium">Have a Discount Code?</span>
+                {availableCoupons.length > 0 && (
+                  <span className="text-xs bg-indigo-100 text-indigo-700 font-semibold rounded-full px-2 py-0.5">
+                    {availableCoupons.length} offer{availableCoupons.length > 1 ? 's' : ''}
+                  </span>
+                )}
               </div>
               <span className="text-indigo-600 font-medium">Add</span>
             </div>
           ) : (
-            <div className="mb-4">
-              <div className="border border-indigo-500 rounded-xl p-3 flex items-center justify-between">
+            <div className="mb-4 border border-indigo-500 rounded-xl overflow-hidden">
+              {/* Input row */}
+              <div className="p-3 flex items-center justify-between">
                 <input
                   type="text"
                   placeholder="Enter your discount code"
@@ -433,16 +478,60 @@ export default function PaymentForm({ examType }: PaymentFormProps = {}) {
                   className="w-full outline-none text-gray-800"
                   disabled={applyingCoupon}
                 />
-                <button 
-                  onClick={handleApplyCoupon}
+                <button
+                  onClick={() => handleApplyCoupon()}
                   disabled={applyingCoupon || !couponCode.trim()}
                   className="ml-3 text-indigo-600 font-semibold disabled:opacity-50"
                 >
                   {applyingCoupon ? 'Applying...' : 'Apply'}
                 </button>
               </div>
+
               {couponError && (
-                <p className="text-red-500 text-xs mt-1">{couponError}</p>
+                <p className="text-red-500 text-xs px-3 pb-2 -mt-1">{couponError}</p>
+              )}
+
+              {/* Available offers list (inside the same field) */}
+              {availableCoupons.length > 0 && (
+                <div className="border-t border-gray-200 bg-gray-50">
+                  <p className="text-gray-600 text-xs font-semibold uppercase tracking-wide px-3 pt-3 pb-2">
+                    Available offers
+                  </p>
+                  <div className="flex flex-col divide-y divide-gray-200">
+                    {availableCoupons.map((c) => (
+                      <div
+                        key={c.code}
+                        className="px-3 py-3 flex items-center justify-between"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className="text-lg">🏷️</span>
+                          <div className="min-w-0">
+                            <div className="font-semibold text-gray-900 tracking-wide truncate">
+                              {c.code}
+                            </div>
+                            <div className="text-xs text-green-700">
+                              Save ₹{c.discountAmount.toLocaleString('en-IN')} ({c.discountPercentage}% off)
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleApplyCoupon(c.code)}
+                          disabled={applyingCoupon}
+                          className="ml-3 text-indigo-600 font-semibold text-sm disabled:opacity-50 shrink-0"
+                        >
+                          {applyingCoupon ? 'Applying…' : 'Apply'}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {loadingAvailableCoupons && availableCoupons.length === 0 && (
+                <div className="border-t border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-500">
+                  Loading available offers…
+                </div>
               )}
             </div>
           )
